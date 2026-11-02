@@ -8,19 +8,5 @@
     "name": "Aftermobile beta",
     "developer": "owenpro2016-cmyk",
     "description": "Asistencia de entrada para movil.",
-    "platforms": ["android32", "android64"],
-    "android": {
-        "min_sdk": 21,
-        "target_sdk": 34
-    },
-    "tags": ["gameplay", "accessibility", "mobile"],
-    "settings": {
-        "modo-asistencia": {
-            "name": "Modo de asistencia",
-            "description": "Desactivado deja el juego exactamente como vanilla.",
-            "type": "string",
-            "default": "equilibrado",
-            "one-of": ["desactivado", "suave", "equilibrado", "agresivo", "personalizado"]
-        }
-    }
+    "platforms": ["android32", "android64"]
 }
