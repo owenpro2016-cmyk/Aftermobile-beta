@@ -8,11 +8,12 @@
 #include <Geode/ui/ScrollLayer.hpp>
 #include <cocos2d.h>
 #include <cmath>
+#include <string>
 
 using namespace geode::prelude;
 
 // =====================================================================================
-// 1. VENTANA DE OPCIONES (MENU GIGANTE CON PESTAÑAS)
+// 1. VENTANA DE OPCIONES (MENU CON PESTAÑAS Y SCROLL)
 // =====================================================================================
 
 class AssistPopup : public geode::Popup {
@@ -21,20 +22,19 @@ protected:
     cocos2d::CCMenu* m_tabMenu = nullptr;
     int m_currentTab = 0;
 
+    // --- Funciones de creación de UI ---
+
     void createToggle(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
         auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.4f);
+        label->setScale(0.35f);
         label->setAnchorPoint({0.f, 0.5f});
         label->setPosition(pos);
         parent->addChild(label);
 
         auto* toggleSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
         auto* toggleOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-        
         auto* toggler = CCMenuItemToggler::create(toggleSpr, toggleOnSpr, this, menu_selector(AssistPopup::onToggleSetting));
-        toggler->setPosition({pos.x + 220.f, pos.y});
-        
-        // Usamos la ID del nodo para guardar qué ajuste estamos tocando
+        toggler->setPosition({pos.x + 200.f, pos.y});
         toggler->setID(settingID);
         toggler->toggle(Mod::get()->getSettingValue<bool>(settingID));
 
@@ -44,47 +44,189 @@ protected:
         parent->addChild(menu);
     }
 
-    void buildTab(int tab) {
-        m_contentLayer->removeAllChildren();
-        m_currentTab = tab;
+    void createIntSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
+        auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
+        label->setScale(0.35f);
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition(pos);
+        parent->addChild(label);
 
-        auto* scroll = ScrollLayer::create({260.f, 180.f});
-        scroll->setPosition({10.f, 20.f});
-        m_contentLayer->addChild(scroll);
-        auto* content = scroll->m_contentLayer;
+        int64_t val = Mod::get()->getSettingValue<int64_t>(settingID);
+        auto* valLabel = CCLabelBMFont::create(std::to_string(val).c_str(), "bigFont.fnt");
+        valLabel->setScale(0.45f);
+        valLabel->setPosition({pos.x + 140.f, pos.y});
+        parent->addChild(valLabel);
 
-        float y = 160.f;
-        if (tab == 0) { // Input
-            createToggle(content, "cb-1", "Buffer Maximo", {10, y}); y -= 30;
-            createToggle(content, "cb-2", "Tolerancia (ms)", {10, y}); y -= 30;
-            createToggle(content, "cb-3", "Anti-Doble Click", {10, y}); y -= 30;
-            createToggle(content, "cb-4", "Hold Delay", {10, y}); y -= 30;
-        } else if (tab == 1) { // Trayectoria
-            createToggle(content, "mostrar-trayectoria", "Mostrar Trayectoria", {10, y}); y -= 30;
-            createToggle(content, "tr-1", "Longitud", {10, y}); y -= 30;
-            createToggle(content, "tr-2", "Grosor", {10, y}); y -= 30;
-            createToggle(content, "tr-3", "Opacidad", {10, y}); y -= 30;
-        } else if (tab == 2) { // Wave/Ship
-            createToggle(content, "wv-1", "Wave Recta", {10, y}); y -= 30;
-            createToggle(content, "wv-2", "Fuerza Wave", {10, y}); y -= 30;
-            createToggle(content, "sh-1", "Ship Altitud", {10, y}); y -= 30;
-            createToggle(content, "sh-2", "Amortiguacion", {10, y}); y -= 30;
-        } else if (tab == 3) { // Visuales
-            createToggle(content, "mostrar-hud", "Mostrar Icono AM", {10, y}); y -= 30;
-            createToggle(content, "vis-1", "Efecto Pulso", {10, y}); y -= 30;
-            createToggle(content, "vis-2", "Destellos", {10, y}); y -= 30;
-        }
+        auto* menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        parent->addChild(menu);
+
+        auto* minusSpr = ButtonSprite::create("-", "bigFont.fnt", "GJ_button_04.png", 0.4f);
+        auto* minusBtn = CCMenuItemSpriteExtra::create(minusSpr, this, menu_selector(AssistPopup::onIntMinus));
+        minusBtn->setPosition({pos.x + 110.f, pos.y});
+        minusBtn->setID(settingID);
+        menu->addChild(minusBtn);
+
+        auto* plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_04.png", 0.4f);
+        auto* plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(AssistPopup::onIntPlus));
+        plusBtn->setPosition({pos.x + 170.f, pos.y});
+        plusBtn->setID(settingID);
+        menu->addChild(plusBtn);
     }
+
+    void createFloatSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
+        auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
+        label->setScale(0.35f);
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition(pos);
+        parent->addChild(label);
+
+        double val = Mod::get()->getSettingValue<double>(settingID);
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", val);
+        auto* valLabel = CCLabelBMFont::create(buf, "bigFont.fnt");
+        valLabel->setScale(0.45f);
+        valLabel->setPosition({pos.x + 140.f, pos.y});
+        parent->addChild(valLabel);
+
+        auto* menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        parent->addChild(menu);
+
+        auto* minusSpr = ButtonSprite::create("-", "bigFont.fnt", "GJ_button_04.png", 0.4f);
+        auto* minusBtn = CCMenuItemSpriteExtra::create(minusSpr, this, menu_selector(AssistPopup::onFloatMinus));
+        minusBtn->setPosition({pos.x + 110.f, pos.y});
+        minusBtn->setID(settingID);
+        menu->addChild(minusBtn);
+
+        auto* plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_04.png", 0.4f);
+        auto* plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(AssistPopup::onFloatPlus));
+        plusBtn->setPosition({pos.x + 170.f, pos.y});
+        plusBtn->setID(settingID);
+        menu->addChild(plusBtn);
+    }
+
+    void createColorSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
+        auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
+        label->setScale(0.35f);
+        label->setAnchorPoint({0.f, 0.5f});
+        label->setPosition(pos);
+        parent->addChild(label);
+
+        auto* menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        parent->addChild(menu);
+
+        auto* btnSpr = ButtonSprite::create("Color", "bigFont.fnt", "GJ_button_04.png", 0.4f);
+        auto* btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(AssistPopup::onColorClick));
+        btn->setPosition({pos.x + 150.f, pos.y});
+        btn->setID(settingID);
+        menu->addChild(btn);
+    }
+
+    // --- Callbacks de UI ---
 
     void onToggleSetting(CCObject* sender) {
         auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
-        if (!toggler) return;
-        Mod::get()->setSettingValue<bool>(toggler->getID(), toggler->isToggled());
+        if (toggler) Mod::get()->setSettingValue<bool>(toggler->getID(), toggler->isToggled());
+    }
+
+    void onIntMinus(CCObject* sender) {
+        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = btn->getID();
+        int64_t val = Mod::get()->getSettingValue<int64_t>(id);
+        int64_t step = (id == "cb-1") ? 1 : 5;
+        val -= step;
+        if (val < 0) val = 0;
+        if (id == "cb-1" && val < 1) val = 1;
+        Mod::get()->setSettingValue<int64_t>(id, val);
+        buildTab(m_currentTab);
+    }
+
+    void onIntPlus(CCObject* sender) {
+        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = btn->getID();
+        int64_t val = Mod::get()->getSettingValue<int64_t>(id);
+        int64_t step = (id == "cb-1") ? 1 : 5;
+        val += step;
+        int64_t maxVal = (id == "cb-1") ? 20 : (id == "cb-2" ? 300 : 100);
+        if (val > maxVal) val = maxVal;
+        Mod::get()->setSettingValue<int64_t>(id, val);
+        buildTab(m_currentTab);
+    }
+
+    void onFloatMinus(CCObject* sender) {
+        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = btn->getID();
+        double val = Mod::get()->getSettingValue<double>(id);
+        val -= 0.1;
+        if (val < 0.1) val = 0.1;
+        Mod::get()->setSettingValue<double>(id, val);
+        buildTab(m_currentTab);
+    }
+
+    void onFloatPlus(CCObject* sender) {
+        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = btn->getID();
+        double val = Mod::get()->getSettingValue<double>(id);
+        val += 0.1;
+        if (val > 1.0) val = 1.0;
+        Mod::get()->setSettingValue<double>(id, val);
+        buildTab(m_currentTab);
+    }
+
+    void onColorClick(CCObject* sender) {
+        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = btn->getID();
+        std::string col = Mod::get()->getSettingValue<std::string>(id);
+        if (col == "rojo") col = "verde";
+        else if (col == "verde") col = "azul";
+        else if (col == "azul") col = "amarillo";
+        else col = "rojo";
+        Mod::get()->setSettingValue<std::string>(id, col);
+        buildTab(m_currentTab);
     }
 
     void onTab(CCObject* sender) {
         auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
         if (btn) buildTab(btn->getTag());
+    }
+
+    void buildTab(int tab) {
+        m_contentLayer->removeAllChildren();
+        m_currentTab = tab;
+
+        auto* scroll = ScrollLayer::create({260.f, 190.f});
+        scroll->setPosition({20.f, 20.f});
+        m_contentLayer->addChild(scroll);
+        
+        auto* content = scroll->m_contentLayer;
+        content->setContentSize({260.f, 260.f}); // Altura para hacer scroll
+
+        float y = 240.f;
+        if (tab == 0) { // Input
+            createIntSetting(content, "cb-1", "Buffer Maximo", {10, y}); y -= 35;
+            createIntSetting(content, "cb-2", "Tolerancia (ms)", {10, y}); y -= 35;
+            createIntSetting(content, "cb-3", "Anti-Doble Click", {10, y}); y -= 35;
+            createIntSetting(content, "cb-4", "Hold Delay", {10, y}); y -= 35;
+        } else if (tab == 1) { // Trayectoria
+            createToggle(content, "mostrar-trayectoria", "Mostrar Trayectoria", {10, y}); y -= 35;
+            createIntSetting(content, "tr-1", "Longitud", {10, y}); y -= 35;
+            createFloatSetting(content, "tr-2", "Grosor", {10, y}); y -= 35;
+            createFloatSetting(content, "tr-3", "Opacidad", {10, y}); y -= 35;
+            createColorSetting(content, "vis-3", "Color", {10, y}); y -= 35;
+        } else if (tab == 2) { // Wave/Ship
+            createToggle(content, "wv-1", "Wave Recta", {10, y}); y -= 35;
+            createFloatSetting(content, "wv-2", "Fuerza Wave", {10, y}); y -= 35;
+            createToggle(content, "sh-1", "Ship Altitud", {10, y}); y -= 35;
+            createFloatSetting(content, "sh-2", "Amortiguacion", {10, y}); y -= 35;
+        } else if (tab == 3) { // Visuales
+            createToggle(content, "mostrar-hud", "Mostrar Icono AM", {10, y}); y -= 35;
+            createToggle(content, "vis-1", "Efecto Pulso", {10, y}); y -= 35;
+            createToggle(content, "vis-2", "Destellos", {10, y}); y -= 35;
+        }
+        
+        scroll->moveToTop();
     }
 
     bool init() override {
@@ -103,7 +245,7 @@ protected:
         for (int i = 0; i < 4; ++i) {
             auto* spr = ButtonSprite::create(tabs[i], "bigFont.fnt", "GJ_button_04.png", 0.4f);
             auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(AssistPopup::onTab));
-            btn->setPosition({35.f + i * 70.f, 230.f});
+            btn->setPosition({35.f + i * 65.f, 240.f});
             btn->setTag(i);
             m_tabMenu->addChild(btn);
         }
@@ -144,20 +286,19 @@ public:
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        // 1. El círculo negro con borde verde (CORREGIDO: Orden de argumentos correcto)
+        // Círculo negro con borde verde neón
         m_circle = cocos2d::CCDrawNode::create();
-        // (Centro, Radio, ColorRelleno, GrosorBorde, ColorBorde, Segmentos)
         m_circle->drawCircle({0, 0}, 28.f, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 1.f), 3.f, cocos2d::ccc4f(0.f, 1.f, 0.f, 1.f), 32);
         this->addChild(m_circle);
 
-        // 2. El texto "am" en verde
+        // Texto "am"
         m_label = cocos2d::CCLabelBMFont::create("am", "bigFont.fnt");
         m_label->setScale(0.9f);
         m_label->setColor({0, 255, 0});
         m_label->setPosition({0, -2});
         this->addChild(m_label);
 
-        // 3. Los destellos (Sparkles) animados (CORREGIDO: Cast a float)
+        // Destellos
         m_sparkles = cocos2d::CCNode::create();
         for(int i=0; i<4; i++) {
             auto* dot = cocos2d::CCDrawNode::create();
@@ -184,7 +325,6 @@ public:
         m_label->setColor(active ? cocos2d::ccColor3B(0, 255, 0) : cocos2d::ccColor3B(150, 150, 150));
         m_sparkles->setVisible(active && Mod::get()->getSettingValue<bool>("vis-2"));
         
-        // CORREGIDO: Uso de Tag para controlar la animación
         bool showPulse = Mod::get()->getSettingValue<bool>("vis-1");
         if (showPulse) {
             if (!m_circle->getActionByTag(123)) {
@@ -226,7 +366,7 @@ public:
 };
 
 // =====================================================================================
-// 3. MOTOR DE INPUT Y TRAYECTORIA (EL CEREBRO)
+// 3. MOTOR DE INPUT Y TRAYECTORIA
 // =====================================================================================
 
 namespace {
