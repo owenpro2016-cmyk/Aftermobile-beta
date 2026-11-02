@@ -11,11 +11,75 @@
 using namespace geode::prelude;
 
 // =====================================================================================
-// 1. CLASE DEL HUD FLOTANTE (EL BOTÓN "AM")
+// 1. VENTANA DE OPCIONES DECORADA (POPUP)
+// =====================================================================================
+
+class AssistPopup : public geode::Popup<> {
+protected:
+    bool init() override {
+        if (!Popup::init(280.f, 220.f, "GJ_square01.png")) return false;
+        this->setTitle("Aftermobile Beta");
+
+        auto* menu = CCMenu::create();
+        menu->setPosition({0, 0});
+        m_mainLayer->addChild(menu);
+
+        auto* statusLabel = CCLabelBMFont::create("Estado del Mod:", "goldFont.fnt");
+        statusLabel->setScale(0.7f);
+        statusLabel->setPosition({140.f, 150.f});
+        m_mainLayer->addChild(statusLabel);
+
+        auto* toggleSpr = ButtonSprite::create("Alternar", "bigFont.fnt", "GJ_button_01.png", 0.8f);
+        auto* toggleBtn = CCMenuItemSpriteExtra::create(
+            toggleSpr, this, menu_selector(AssistPopup::onToggle)
+        );
+        toggleBtn->setPosition({140.f, 100.f});
+        menu->addChild(toggleBtn);
+
+        auto* resetSpr = ButtonSprite::create("Resetear", "bigFont.fnt", "GJ_button_04.png", 0.8f);
+        auto* resetBtn = CCMenuItemSpriteExtra::create(
+            resetSpr, this, menu_selector(AssistPopup::onReset)
+        );
+        resetBtn->setPosition({140.f, 50.f});
+        menu->addChild(resetBtn);
+
+        return true;
+    }
+
+    void onToggle(CCObject*) {
+        std::string actual = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+        if (actual == "desactivado") {
+            Mod::get()->setSettingValue<std::string>("modo-asistencia", "equilibrado");
+            FLAlertLayer::create("Aftermobile", "Mod ACTIVADO.", "OK")->show();
+        } else {
+            Mod::get()->setSettingValue<std::string>("modo-asistencia", "desactivado");
+            FLAlertLayer::create("Aftermobile", "Mod DESACTIVADO.", "OK")->show();
+        }
+    }
+
+    void onReset(CCObject*) {
+        FLAlertLayer::create("Aftermobile", "Datos reseteados.", "OK")->show();
+    }
+
+public:
+    static AssistPopup* create() {
+        auto* ret = new AssistPopup();
+        if (ret->init()) {
+            ret->autorelease();
+            return ret;
+        }
+        delete ret;
+        return nullptr;
+    }
+};
+
+// =====================================================================================
+// 2. HUD CIRCULAR FLOTANTE
 // =====================================================================================
 
 class AssistHUD : public cocos2d::CCLayer {
 public:
+    cocos2d::CCSprite* m_circle = nullptr;
     cocos2d::CCLabelBMFont* m_label = nullptr;
 
     static AssistHUD* create() {
@@ -31,13 +95,12 @@ public:
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        auto* bg = cocos2d::CCLayerColor::create(cocos2d::ccc4(30, 30, 30, 200), 50, 50);
-        bg->setPosition({-25, -25});
-        this->addChild(bg);
+        m_circle = cocos2d::CCSprite::createWithSpriteFrameName("GJ_button_01.png");
+        m_circle->setScale(0.8f);
+        this->addChild(m_circle);
 
         m_label = cocos2d::CCLabelBMFont::create("AM", "bigFont.fnt");
         m_label->setScale(0.6f);
-        m_label->setPosition({0, 0});
         this->addChild(m_label);
 
         this->setTouchEnabled(true);
@@ -51,20 +114,19 @@ public:
 
     void update(float dt) override {
         if (m_label) {
-            // CORREGIDO: Ahora lee bien el string y no intenta usar .empty() en un bool
             std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
             if (modo != "desactivado") {
-                m_label->setColor({100, 255, 100}); // Verde si está activo
+                m_label->setColor({100, 255, 100});
             } else {
-                m_label->setColor({150, 150, 150}); // Gris si está off
+                m_label->setColor({150, 150, 150});
             }
         }
     }
 
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto pos = this->convertTouchToNodeSpace(touch);
-        cocos2d::CCRect rect(-25, -25, 50, 50);
-        return rect.containsPoint(pos);
+        if (pos.getLengthSq() < 625.f) return true;
+        return false;
     }
 
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
@@ -75,7 +137,7 @@ public:
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto delta = touch->getDelta();
         if (std::abs(delta.x) < 5 && std::abs(delta.y) < 5) {
-            FLAlertLayer::create("Aftermobile", "El menu flotante estara aqui pronto!", "OK")->show();
+            AssistPopup::create()->show();
         }
     }
 
@@ -85,44 +147,19 @@ public:
 };
 
 // =====================================================================================
-// 2. VARIABLES GLOBALES Y LÓGICA DE INPUT
+// 3. VARIABLES GLOBALES Y LÓGICA DE FÍSICA (SISTEMA ARREGLADO)
 // =====================================================================================
 
 namespace {
-    constexpr size_t kCapBuffer = 128;
-    
-    struct InputEvent {
-        bool down;
-        int button;
-        bool isP1;
-        uint64_t tick;
-        double timestamp;
-    };
-
-    InputEvent g_queue[kCapBuffer]{};
-    size_t g_head = 0, g_tail = 0;
-
     uint64_t g_tickFisico = 0;
-    double g_currentTime = 0.0;
-    
-    double g_lastDownTime[2] = {0.0, 0.0};
-    bool g_pendingRelease[2] = {false, false};
-    double g_pendingReleaseTime[2] = {0.0, 0.0};
-    constexpr double kHoldDelay = 0.040; 
-
     bool g_emitiendo = false;
     
+    // Sistema simple: Solo guardamos si se presionó o soltó en este frame
+    bool g_inputDown[2] = {false, false};
+    bool g_inputReleased[2] = {false, false};
+    bool g_isHeld[2] = {false, false};
+    
     AssistHUD* g_hud = nullptr;
-
-    inline bool queueLlena() { return ((g_head + 1) % kCapBuffer) == g_tail; }
-    inline bool queueVacia() { return g_head == g_tail; }
-    inline void limpiarQueue() { g_head = 0; g_tail = 0; }
-
-    void pushEvent(bool down, int button, bool isP1) {
-        if (queueLlena()) g_tail = (g_tail + 1) % kCapBuffer;
-        g_queue[g_head] = InputEvent{ down, button, isP1, g_tickFisico, g_currentTime };
-        g_head = (g_head + 1) % kCapBuffer;
-    }
 
     void dibujarTrayectoria(PlayLayer* pl) {
         if (!pl || !pl->m_player1) return;
@@ -133,7 +170,6 @@ namespace {
             drawNode->setID("trajectory-draw-node");
             pl->addChild(drawNode, 100);
         }
-        
         drawNode->clear();
         
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
@@ -145,72 +181,45 @@ namespace {
         float vx = 8.4f; 
         float vy = p1->m_yVelocity;
         
-        bool isShip = p1->m_isShip;
-        bool isBird = p1->m_isBird;
-        
         for (int i = 0; i < 30; ++i) {
             x += vx;
-            if (isShip) {
-                vy += 0.4f;
-            } else if (isBird) {
-                vy -= 0.958f;
-            } else {
-                vy -= 0.958f; 
-            }
-            y += vy;
-
-            drawNode->drawDot({x, y}, 2.5f, cocos2d::ccc4f(1.0f, 0.2f, 0.2f, 0.5f));
+            if (p1->m_isShip) vy += 0.4f;
+            else if (p1->m_isBird) vy -= 0.958f;
+            else vy -= 0.958f; 
             
+            y += vy;
+            drawNode->drawDot({x, y}, 2.5f, cocos2d::ccc4f(1.0f, 0.2f, 0.2f, 0.5f));
             if (y < 0) break;
         }
     }
 }
 
 // =====================================================================================
-// 3. HOOKS DEL JUEGO
+// 4. HOOKS DEL JUEGO
 // =====================================================================================
 
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void update(float dt) {
-        g_currentTime += dt;
-
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
-        bool activo = (modo != "desactivado");
-
-        if (activo) {
+        
+        if (modo != "desactivado") {
             ++g_tickFisico;
-
-            while (!queueVacia()) {
-                InputEvent* e = &g_queue[g_tail];
-                
-                if (e->tick <= g_tickFisico) {
-                    if (e->down) {
-                        if (g_currentTime - g_lastDownTime[e->isP1] < 0.030) { 
-                            g_tail = (g_tail + 1) % kCapBuffer;
-                            continue; 
-                        }
-                        g_lastDownTime[e->isP1] = g_currentTime;
-                        g_pendingRelease[e->isP1] = false;
-                    }
-
+            
+            // Procesar los inputs en el tick exacto de física
+            for (int p = 0; p < 2; p++) {
+                if (g_inputDown[p]) {
+                    g_inputDown[p] = false;
+                    g_isHeld[p] = true;
                     g_emitiendo = true;
-                    GJBaseGameLayer::handleButton(e->down, e->button, e->isP1);
+                    GJBaseGameLayer::handleButton(true, 1, p == 0);
                     g_emitiendo = false;
-                    
-                    g_tail = (g_tail + 1) % kCapBuffer;
-                } else {
-                    break;
                 }
-            }
-
-            for (int p = 0; p < 2; ++p) {
-                if (g_pendingRelease[p]) {
-                    if (g_currentTime >= g_pendingReleaseTime[p]) {
-                        g_emitiendo = true;
-                        GJBaseGameLayer::handleButton(false, 1, p == 0);
-                        g_emitiendo = false;
-                        g_pendingRelease[p] = false;
-                    }
+                if (g_inputReleased[p]) {
+                    g_inputReleased[p] = false;
+                    g_isHeld[p] = false;
+                    g_emitiendo = true;
+                    GJBaseGameLayer::handleButton(false, 1, p == 0);
+                    g_emitiendo = false;
                 }
             }
         }
@@ -221,19 +230,16 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool isPlayer1) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
         
+        // Si el mod está apagado o nosotros estamos emitiendo, pasa normal
         if (modo == "desactivado" || g_emitiendo) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
 
-        if (!down) {
-            int p = isPlayer1 ? 0 : 1;
-            g_pendingRelease[p] = true;
-            g_pendingReleaseTime[p] = g_currentTime + kHoldDelay;
-            pushEvent(down, button, isPlayer1);
-        } else {
-            pushEvent(down, button, isPlayer1);
-        }
+        // Si el jugador tocó, guardamos el input para el próximo tick de física
+        int p = isPlayer1 ? 0 : 1;
+        if (down) g_inputDown[p] = true;
+        else g_inputReleased[p] = true;
     }
 };
 
@@ -241,15 +247,10 @@ class $modify(InputAssistPlay, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         
-        std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
-        
-        if (modo != "desactivado") {
-            g_tickFisico = 0;
-            g_currentTime = 0.0;
-            limpiarQueue();
-            g_pendingRelease[0] = g_pendingRelease[1] = false;
-            g_lastDownTime[0] = g_lastDownTime[1] = -1.0;
-        }
+        g_tickFisico = 0;
+        g_inputDown[0] = g_inputDown[1] = false;
+        g_inputReleased[0] = g_inputReleased[1] = false;
+        g_isHeld[0] = g_isHeld[1] = false;
         
         if (!g_hud) {
             g_hud = AssistHUD::create();
@@ -262,9 +263,9 @@ class $modify(InputAssistPlay, PlayLayer) {
     void resetLevel() {
         PlayLayer::resetLevel();
         g_tickFisico = 0;
-        g_currentTime = 0.0;
-        limpiarQueue();
-        g_pendingRelease[0] = g_pendingRelease[1] = false;
+        g_inputDown[0] = g_inputDown[1] = false;
+        g_inputReleased[0] = g_inputReleased[1] = false;
+        g_isHeld[0] = g_isHeld[1] = false;
     }
 
     void update(float dt) {
@@ -276,6 +277,28 @@ class $modify(InputAssistPlay, PlayLayer) {
     }
 };
 
+// =====================================================================================
+// 5. BOTÓN EN EL MENÚ DE PAUSA
+// =====================================================================================
+
+class $modify(PauseLayerHook, PauseLayer) {
+    void customSetup() {
+        PauseLayer::customSetup();
+        auto* menu = getChildByID("right-button-menu");
+        if (!menu) return;
+
+        auto* spr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+        auto* btn = CCMenuItemSpriteExtra::create(
+            spr, this, menu_selector(PauseLayerHook::abrirPanel)
+        );
+        menu->addChild(btn);
+    }
+
+    void abrirPanel(CCObject*) {
+        AssistPopup::create()->show();
+    }
+};
+
 $on_mod(Loaded) {
-    log::info("Aftermobile Beta cargado correctamente.");
+    log::info("Aftermobile Beta: Sistema de input simple cargado.");
 }
