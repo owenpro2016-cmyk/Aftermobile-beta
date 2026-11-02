@@ -6,51 +6,18 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <cocos2d.h>
+#include <cmath>
 
 using namespace geode::prelude;
 
 // =====================================================================================
-// 1. ESTRUCTURAS DE DATOS Y VARIABLES GLOBALES
-// =====================================================================================
-
-namespace {
-    constexpr size_t kCapBuffer = 128;
-    
-    // Estructura para guardar cada input con su marca de tiempo exacta
-    struct InputEvent {
-        bool down;
-        int button;
-        bool isP1;
-        uint64_t tick;
-        double timestamp;
-    };
-
-    // Cola circular para no usar memoria dinámica en el bucle de física
-    InputEvent g_queue[kCapBuffer]{};
-    size_t g_head = 0, g_tail = 0;
-
-    uint64_t g_tickFisico = 0;
-    double g_currentTime = 0.0;
-    
-    // Variables de anti-doble click y hold inteligente
-    double g_lastDownTime[2] = {0.0, 0.0};
-    bool g_pendingRelease[2] = {false, false};
-    double g_pendingReleaseTime[2] = {0.0, 0.0};
-    constexpr double kHoldDelay = 0.040; // 40ms para detectar spam
-
-    bool g_activo = false;
-    bool g_emitiendo = false;
-    
-    // Referencia global al HUD
-    class AssistHUD* g_hud = nullptr;
-}
-
-// =====================================================================================
-// 2. CLASE DEL HUD FLOTANTE (EL BOTÓN "AM")
+// 1. CLASE DEL HUD FLOTANTE (EL BOTÓN "AM")
 // =====================================================================================
 
 class AssistHUD : public cocos2d::CCLayer {
 public:
+    cocos2d::CCLabelBMFont* m_label = nullptr;
+
     static AssistHUD* create() {
         auto* ret = new AssistHUD();
         if (ret->init()) {
@@ -64,42 +31,34 @@ public:
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        // Creamos el fondo del botón (un círculo o cuadrado semi-transparente)
         auto* bg = cocos2d::CCLayerColor::create(cocos2d::ccc4(30, 30, 30, 200), 50, 50);
-        bg->setPosition({-25, -25}); // Centrado
+        bg->setPosition({-25, -25});
         this->addChild(bg);
 
-        // Texto "AM"
-        auto* label = cocos2d::CCLabelBMFont::create("AM", "bigFont.fnt");
-        label->setScale(0.6f);
-        label->setPosition({0, 0});
-        this->addChild(label);
+        m_label = cocos2d::CCLabelBMFont::create("AM", "bigFont.fnt");
+        m_label->setScale(0.6f);
+        m_label->setPosition({0, 0});
+        this->addChild(m_label);
 
-        // Para hacerlo arrastrable, necesitamos registrar los toques
         this->setTouchEnabled(true);
         this->setTouchMode(cocos2d::kCCTouchesOneByOne);
-        this->setTouchPriority(-500); // Prioridad alta para que no lo tape el juego
+        this->setTouchPriority(-500); 
 
-        // Lo ponemos en una posición inicial (arriba a la izquierda)
         this->setPosition({50, cocos2d::CCDirector::get()->getWinSize().height - 100});
-
-        // Actualizar estado visual cada frame
         this->scheduleUpdate();
         return true;
     }
 
     void update(float dt) override {
-        // Si el mod está desactivado, ponemos el texto grisáceo
-        if (auto* label = typeinfo_cast<cocos2d::CCLabelBMFont*>(this->getChildren()->objectAtIndex(1))) {
-            if (!g_activo) {
-                label->setColor({150, 150, 150});
+        if (m_label) {
+            if (!Mod::get()->getSettingValue<bool>("modo-asistencia").empty() && Mod::get()->getSettingValue<std::string>("modo-asistencia") != "desactivado") {
+                m_label->setColor({100, 255, 100}); // Verde si está activo
             } else {
-                label->setColor({255, 255, 255});
+                m_label->setColor({150, 150, 150}); // Gris si está off
             }
         }
     }
 
-    // --- Lógica para arrastrar el HUD ---
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto pos = this->convertTouchToNodeSpace(touch);
         cocos2d::CCRect rect(-25, -25, 50, 50);
@@ -112,16 +71,11 @@ public:
     }
 
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
-        // Si fue un toque rápido (no arrastre), abrimos el menú
         auto delta = touch->getDelta();
         if (std::abs(delta.x) < 5 && std::abs(delta.y) < 5) {
-            this->abrirMenu();
+            // Aquí irá la apertura del menú flotante en el futuro
+            FLAlertLayer::create("Aftermobile", "El menu flotante estara aqui pronto!", "OK")->show();
         }
-    }
-
-    void abrirMenu() {
-        // Aquí abriremos el Popup más adelante
-        // AssistPanel::create()->show();
     }
 
     void registerWithTouchDispatcher() override {
@@ -129,12 +83,37 @@ public:
     }
 };
 
-
 // =====================================================================================
-// 3. LÓGICA DE LA COLA DE INPUTS Y TRAYECTORIA
+// 2. VARIABLES GLOBALES Y LÓGICA DE INPUT
 // =====================================================================================
 
 namespace {
+    constexpr size_t kCapBuffer = 128;
+    
+    struct InputEvent {
+        bool down;
+        int button;
+        bool isP1;
+        uint64_t tick;
+        double timestamp;
+    };
+
+    InputEvent g_queue[kCapBuffer]{};
+    size_t g_head = 0, g_tail = 0;
+
+    uint64_t g_tickFisico = 0;
+    double g_currentTime = 0.0;
+    
+    double g_lastDownTime[2] = {0.0, 0.0};
+    bool g_pendingRelease[2] = {false, false};
+    double g_pendingReleaseTime[2] = {0.0, 0.0};
+    constexpr double kHoldDelay = 0.040; 
+
+    bool g_emitiendo = false;
+    
+    // El puntero global al HUD, ya sin conflictos
+    AssistHUD* g_hud = nullptr;
+
     inline bool queueLlena() { return ((g_head + 1) % kCapBuffer) == g_tail; }
     inline bool queueVacia() { return g_head == g_tail; }
     inline void limpiarQueue() { g_head = 0; g_tail = 0; }
@@ -145,7 +124,6 @@ namespace {
         g_head = (g_head + 1) % kCapBuffer;
     }
 
-    // Dibuja la trayectoria usando CCDrawNode
     void dibujarTrayectoria(PlayLayer* pl) {
         if (!pl || !pl->m_player1) return;
         
@@ -158,8 +136,8 @@ namespace {
         
         drawNode->clear();
         
-        // Solo dibujamos si el mod está activo
-        if (!g_activo) return;
+        std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+        if (modo == "desactivado") return;
 
         auto* p1 = pl->m_player1;
         float x = p1->getPositionX();
@@ -170,7 +148,6 @@ namespace {
         bool isShip = p1->m_isShip;
         bool isBird = p1->m_isBird;
         
-        // Simulamos 30 ticks
         for (int i = 0; i < 30; ++i) {
             x += vx;
             if (isShip) {
@@ -182,7 +159,6 @@ namespace {
             }
             y += vy;
 
-            // Dibujamos el punto de predicción
             drawNode->drawDot({x, y}, 2.5f, cocos2d::ccc4f(1.0f, 0.2f, 0.2f, 0.5f));
             
             if (y < 0) break;
@@ -191,29 +167,30 @@ namespace {
 }
 
 // =====================================================================================
-// 4. HOOKS DEL JUEGO (LÓGICA CENTRAL)
+// 3. HOOKS DEL JUEGO
 // =====================================================================================
 
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void update(float dt) {
         g_currentTime += dt;
 
-        if (g_activo) {
+        std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+        bool activo = (modo != "desactivado");
+
+        if (activo) {
             ++g_tickFisico;
 
-            // 1. Procesar cola de inputs
             while (!queueVacia()) {
                 InputEvent* e = &g_queue[g_tail];
                 
                 if (e->tick <= g_tickFisico) {
-                    // Anti-doble-click: si bajó el botón muy rápido, lo ignoramos
                     if (e->down) {
                         if (g_currentTime - g_lastDownTime[e->isP1] < 0.030) { 
                             g_tail = (g_tail + 1) % kCapBuffer;
                             continue; 
                         }
                         g_lastDownTime[e->isP1] = g_currentTime;
-                        g_pendingRelease[e->isP1] = false; // Cancelamos release pendiente
+                        g_pendingRelease[e->isP1] = false;
                     }
 
                     g_emitiendo = true;
@@ -222,11 +199,10 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
                     
                     g_tail = (g_tail + 1) % kCapBuffer;
                 } else {
-                    break; // Aún no es el tick
+                    break;
                 }
             }
 
-            // 2. Procesar Hold Inteligente (evitar micro-releases)
             for (int p = 0; p < 2; ++p) {
                 if (g_pendingRelease[p]) {
                     if (g_currentTime >= g_pendingReleaseTime[p]) {
@@ -243,12 +219,13 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
     }
 
     void handleButton(bool down, int button, bool isPlayer1) {
-        if (!g_activo || g_emitiendo) {
+        std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+        
+        if (modo == "desactivado" || g_emitiendo) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
 
-        // Si está soltando, agendamos el release para ver si vuelve a pulsar rápido
         if (!down) {
             int p = isPlayer1 ? 0 : 1;
             g_pendingRelease[p] = true;
@@ -265,9 +242,8 @@ class $modify(InputAssistPlay, PlayLayer) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
-        g_activo = (modo != "desactivado");
         
-        if (g_activo) {
+        if (modo != "desactivado") {
             g_tickFisico = 0;
             g_currentTime = 0.0;
             limpiarQueue();
@@ -293,20 +269,14 @@ class $modify(InputAssistPlay, PlayLayer) {
     }
 
     void update(float dt) {
-        if (g_activo) {
+        std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+        if (modo != "desactivado") {
             dibujarTrayectoria(this);
         }
         PlayLayer::update(dt);
     }
 };
 
-// =====================================================================================
-// 5. CICLO DE VIDA DEL MOD
-// =====================================================================================
-
 $on_mod(Loaded) {
-    listenForSettingChanges<std::string>("modo-asistencia", [](std::string modo) {
-        g_activo = (modo != "desactivado");
-        if (!g_activo) limpiarQueue();
-    });
+    log::info("Aftermobile Beta cargado correctamente.");
 }
