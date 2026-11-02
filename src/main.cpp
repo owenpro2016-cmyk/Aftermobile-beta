@@ -17,7 +17,7 @@ namespace {
     uint32_t g_tickFisico = 0, g_toleranciaTicks = 7;
     float g_targetHz = 60.f, g_altitudObjetivo = 0.f, g_waveAngulo = 0.f;
     bool g_activo = false, g_altitudFijada = false;
-    bool g_emitiendo = false; // <--- NUEVA BANDERA PARA EVITAR BUCLES
+    bool g_emitiendo = false;
 
     inline bool bufferLleno() { return ((g_cabeza + 1) % kCapBuffer) == g_cola; }
     inline bool bufferVacio() { return g_cabeza == g_cola; }
@@ -57,7 +57,6 @@ namespace {
                 g_cola = (g_cola + 1) % kCapBuffer; continue;
             }
 
-            // AQUI ESTA LA MAGIA: Usamos la funcion del juego en lugar de pushButton a pelo
             g_emitiendo = true;
             if (PlayLayer::get()) {
                 PlayLayer::get()->handleButton(e->down, e->button, e->isP1);
@@ -103,12 +102,10 @@ namespace {
 
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool isPlayer1) {
-        // Si estamos emitiendo, dejamos que el juego original procese el click
         if (!g_activo || g_emitiendo) { 
             GJBaseGameLayer::handleButton(down, button, isPlayer1); 
             return; 
         }
-        // Si el usuario toca la pantalla, lo guardamos en el buffer
         pushEntrada(down, button, isPlayer1);
     }
 };
@@ -119,11 +116,7 @@ class $modify(InputAssistPlay, PlayLayer) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
         g_activo = (modo != "desactivado");
         if (g_activo) {
-            g_targetHz = 60.f;
-            if (auto* app = CCApplication::get()) {
-                float r = app->getTargetTickRate();
-                if (r > 1.f && r < 240.f) g_targetHz = r;
-            }
+            g_targetHz = 60.f; // Fijado a 60 porque la fisica de GD siempre corre a 60 ticks
             recalcularTolerancia(); limpiarBuffer(); resetMetricas();
             g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
         }
