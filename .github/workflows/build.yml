@@ -1,27 +1,19 @@
 name: Build Geode Mod
 
-on:
-  workflow_dispatch: 
-  push:
-    branches: [ "main" ]
+on: [push, workflow_dispatch]
 
 jobs:
   build:
-    name: Build Android
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout del código
-        uses: actions/checkout@v4
-
-      - name: Compilar el mod
-        uses: geode-sdk/build-geode-mod@main
+      - uses: actions/checkout@v4
+      
+      - uses: geode-sdk/build-geode-mod@main
         id: build
         with:
           target: Android64
-
-      - name: Subir el .geode como artefacto
-        uses: actions/upload-artifact@v4
+          
+      - uses: actions/upload-artifact@v4
         with:
           name: Aftermobile-beta
           path: ${{ steps.build.outputs.build-output }}
