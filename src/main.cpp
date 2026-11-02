@@ -69,7 +69,8 @@ namespace {
 
     void aplicarWaveRecta() {
         auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        if (!p1 || !p1->m_isWave || !g_activo || !bufferVacio()) return;
+        // AQUI CAMBIAMOS m_isWave por m_isDart
+        if (!p1 || !p1->m_isDart || !g_activo || !bufferVacio()) return;
         if (!Mod::get()->getSettingValue<bool>("wave-recta")) return;
         
         constexpr float umbral = 0.05f;
@@ -79,7 +80,8 @@ namespace {
 
     void aplicarVueloRecto() {
         auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        if (!p1 || (!p1->m_isShip && !p1->m_isUFO) || !g_activo || !bufferVacio()) return;
+        // AQUI CAMBIAMOS m_isUFO por m_isBird
+        if (!p1 || (!p1->m_isShip && !p1->m_isBird) || !g_activo || !bufferVacio()) return;
         if (!Mod::get()->getSettingValue<bool>("vuelo-recto")) return;
 
         float yActual = p1->getPositionY();
@@ -121,7 +123,8 @@ class $modify(InputAssistPlay, PlayLayer) {
     void update(float dt) {
         if (g_activo) {
             ++g_tickFisico;
-            if (m_player1 && m_player1->m_isWave) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
+            // AQUI TAMBIEN CAMBIAMOS m_isWave por m_isDart
+            if (m_player1 && m_player1->m_isDart) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
             procesarBuffer();
             aplicarWaveRecta();
             aplicarVueloRecto();
