@@ -1,0 +1,89 @@
+{
+    "geode": "v5.10.1",
+    "gd": {
+        "android": "2.206"
+    },
+    "version": "v1.0.0",
+    "id": "owenpro2016-cmyk.aftermobile-beta",
+    "name": "Aftermobile beta",
+    "developer": "owenpro2016-cmyk",
+    "description": "Asistencia de entrada para movil.",
+    "platforms": ["android32", "android64"],
+    "android": {
+        "min_sdk": 21,
+        "target_sdk": 34
+    },
+    "tags": ["gameplay", "accessibility", "mobile"],
+    "settings": {
+        "modo-asistencia": {
+            "name": "Modo de asistencia",
+            "description": "Desactivado deja el juego exactamente como vanilla.",
+            "type": "string",
+            "default": "equilibrado",
+            "one-of": ["desactivado", "suave", "equilibrado", "agresivo", "personalizado"]
+        },
+        "alinear-clicks": {
+            "name": "Alinear clicks al frame",
+            "description": "Reemite cada toque en el tick exacto de fisica.",
+            "type": "bool",
+            "default": true
+        },
+        "desfase-frames": {
+            "name": "Desfase en frames",
+            "description": "Adelanta o retrasa el click. 0 = alineado exacto.",
+            "type": "int",
+            "default": 0,
+            "min": -3,
+            "max": 3
+        },
+        "corregir-click-temprano": {
+            "name": "Corregir click temprano",
+            "description": "Retiene clicks tempranos y los emite en el tick seguro.",
+            "type": "bool",
+            "default": true
+        },
+        "tolerancia-ms": {
+            "name": "Tolerancia de correccion (ms)",
+            "description": "Cuanto tiempo antes puedes pulsar.",
+            "type": "int",
+            "default": 120,
+            "min": 30,
+            "max": 250
+        },
+        "modo-adaptativo": {
+            "name": "Modo adaptativo",
+            "description": "Ajusta el desfase segun tu error sistematico.",
+            "type": "bool",
+            "default": false
+        },
+        "wave-recta": {
+            "name": "Wave recta",
+            "description": "Mantiene la linea horizontal con micro-pulsos.",
+            "type": "bool",
+            "default": true
+        },
+        "vuelo-recto": {
+            "name": "Vuelo recto",
+            "description": "Mantiene la altitud objetivo con amortiguacion.",
+            "type": "bool",
+            "default": true
+        },
+        "amortiguacion-vuelo": {
+            "name": "Amortiguacion de vuelo",
+            "description": "0.1 es suave, 0.9 es reactivo.",
+            "type": "float",
+            "default": 0.5,
+            "min": 0.1,
+            "max": 0.9,
+            "control": {
+                "slider": true
+            }
+        },
+        "mostrar-hud": {
+            "name": "Mostrar indicador en pantalla",
+            "description": "HUD discreto con estado y metricas.",
+            "type": "bool",
+            "default": true
+        }
+    }
+}
