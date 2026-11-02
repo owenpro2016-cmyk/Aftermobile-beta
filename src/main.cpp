@@ -51,7 +51,9 @@ public:
 
     void update(float dt) override {
         if (m_label) {
-            if (!Mod::get()->getSettingValue<bool>("modo-asistencia").empty() && Mod::get()->getSettingValue<std::string>("modo-asistencia") != "desactivado") {
+            // CORREGIDO: Ahora lee bien el string y no intenta usar .empty() en un bool
+            std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
+            if (modo != "desactivado") {
                 m_label->setColor({100, 255, 100}); // Verde si está activo
             } else {
                 m_label->setColor({150, 150, 150}); // Gris si está off
@@ -73,7 +75,6 @@ public:
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto delta = touch->getDelta();
         if (std::abs(delta.x) < 5 && std::abs(delta.y) < 5) {
-            // Aquí irá la apertura del menú flotante en el futuro
             FLAlertLayer::create("Aftermobile", "El menu flotante estara aqui pronto!", "OK")->show();
         }
     }
@@ -111,7 +112,6 @@ namespace {
 
     bool g_emitiendo = false;
     
-    // El puntero global al HUD, ya sin conflictos
     AssistHUD* g_hud = nullptr;
 
     inline bool queueLlena() { return ((g_head + 1) % kCapBuffer) == g_tail; }
@@ -251,7 +251,6 @@ class $modify(InputAssistPlay, PlayLayer) {
             g_lastDownTime[0] = g_lastDownTime[1] = -1.0;
         }
         
-        // Creamos el HUD
         if (!g_hud) {
             g_hud = AssistHUD::create();
             this->addChild(g_hud, 9999);
