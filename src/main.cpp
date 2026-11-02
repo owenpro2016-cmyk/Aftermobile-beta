@@ -30,11 +30,13 @@ protected:
 
         auto* toggleSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
         auto* toggleOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
+        
         auto* toggler = CCMenuItemToggler::create(toggleSpr, toggleOnSpr, this, menu_selector(AssistPopup::onToggleSetting));
         toggler->setPosition({pos.x + 220.f, pos.y});
-        toggler->setTag(Mod::get()->getSettingValue<bool>(settingID) ? 1 : 0);
-        // Guardamos el ID en la propiedad del nodo para leerlo luego
-        toggler->setUserData(new std::string(settingID)); 
+        
+        // Usamos la ID del nodo para guardar qué ajuste estamos tocando
+        toggler->setID(settingID);
+        toggler->toggle(Mod::get()->getSettingValue<bool>(settingID));
 
         auto* menu = CCMenu::create();
         menu->setPosition({0, 0});
@@ -53,7 +55,7 @@ protected:
 
         float y = 160.f;
         if (tab == 0) { // Input
-            createToggle(content, "cb-1", "Buffer Maximo (int)", {10, y}); y -= 30;
+            createToggle(content, "cb-1", "Buffer Maximo", {10, y}); y -= 30;
             createToggle(content, "cb-2", "Tolerancia (ms)", {10, y}); y -= 30;
             createToggle(content, "cb-3", "Anti-Doble Click", {10, y}); y -= 30;
             createToggle(content, "cb-4", "Hold Delay", {10, y}); y -= 30;
@@ -77,8 +79,7 @@ protected:
     void onToggleSetting(CCObject* sender) {
         auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
         if (!toggler) return;
-        std::string id = *static_cast<std::string*>(toggler->getUserData());
-        Mod::get()->setSettingValue<bool>(id, !toggler->isToggled());
+        Mod::get()->setSettingValue<bool>(toggler->getID(), toggler->isToggled());
     }
 
     void onTab(CCObject* sender) {
@@ -90,12 +91,10 @@ protected:
         if (!Popup::init(300.f, 280.f)) return false;
         this->setTitle("Aftermobile UI");
 
-        // Fondo oscuro con borde verde
         auto* bg = cocos2d::CCLayerColor::create(cocos2d::ccc4(10, 20, 10, 255), 280.f, 240.f);
         bg->setPosition({10.f, 10.f});
         m_mainLayer->addChild(bg, -1);
 
-        // Menú de Pestañas
         m_tabMenu = CCMenu::create();
         m_tabMenu->setPosition({0, 0});
         m_mainLayer->addChild(m_tabMenu);
@@ -145,10 +144,10 @@ public:
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        // 1. El círculo negro con borde verde
+        // 1. El círculo negro con borde verde (CORREGIDO: Orden de argumentos correcto)
         m_circle = cocos2d::CCDrawNode::create();
-        m_circle->drawCircle({0, 0}, 28.f, 0, 32, false, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 1.f)); // Fondo negro
-        m_circle->drawCircle({0, 0}, 28.f, 0, 32, 3.f, cocos2d::ccc4f(0.f, 1.f, 0.f, 1.f)); // Borde verde
+        // (Centro, Radio, ColorRelleno, GrosorBorde, ColorBorde, Segmentos)
+        m_circle->drawCircle({0, 0}, 28.f, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 1.f), 3.f, cocos2d::ccc4f(0.f, 1.f, 0.f, 1.f), 32);
         this->addChild(m_circle);
 
         // 2. El texto "am" en verde
@@ -158,26 +157,17 @@ public:
         m_label->setPosition({0, -2});
         this->addChild(m_label);
 
-        // 3. Los destellos (Sparkles) animados
+        // 3. Los destellos (Sparkles) animados (CORREGIDO: Cast a float)
         m_sparkles = cocos2d::CCNode::create();
         for(int i=0; i<4; i++) {
             auto* dot = cocos2d::CCDrawNode::create();
             dot->drawDot({0, 0}, 2.f, cocos2d::ccc4f(1.f, 1.f, 1.f, 1.f));
-            dot->setPosition({cos(i * M_PI / 2) * 20, sin(i * M_PI / 2) * 20});
+            float angle = i * (static_cast<float>(M_PI) / 2.f);
+            dot->setPosition({static_cast<float>(std::cos(angle)) * 20.f, static_cast<float>(std::sin(angle)) * 20.f});
             m_sparkles->addChild(dot);
         }
         m_sparkles->runAction(cocos2d::CCRepeatForever::create(cocos2d::CCRotateBy::create(2.0f, 360.f)));
         this->addChild(m_sparkles);
-
-        // 4. Animación de pulso en el círculo
-        auto* pulse = cocos2d::CCRepeatForever::create(
-            cocos2d::CCSequence::create(
-                cocos2d::CCScaleTo::create(0.5f, 1.1f),
-                cocos2d::CCScaleTo::create(0.5f, 1.0f),
-                nullptr
-            )
-        );
-        m_circle->runAction(pulse);
 
         this->setTouchEnabled(true);
         this->setTouchMode(cocos2d::kCCTouchesOneByOne);
@@ -194,13 +184,22 @@ public:
         m_label->setColor(active ? cocos2d::ccColor3B(0, 255, 0) : cocos2d::ccColor3B(150, 150, 150));
         m_sparkles->setVisible(active && Mod::get()->getSettingValue<bool>("vis-2"));
         
-        if (Mod::get()->getSettingValue<bool>("vis-1")) {
-            if (m_circle->getNumberOfRunningActions() == 0) {
-                m_circle->runAction(cocos2d::CCRepeatForever::create(cocos2d::CCSequence::create(
-                    cocos2d::CCScaleTo::create(0.5f, 1.1f), cocos2d::CCScaleTo::create(0.5f, 1.0f), nullptr)));
+        // CORREGIDO: Uso de Tag para controlar la animación
+        bool showPulse = Mod::get()->getSettingValue<bool>("vis-1");
+        if (showPulse) {
+            if (!m_circle->getActionByTag(123)) {
+                auto* pulse = cocos2d::CCRepeatForever::create(
+                    cocos2d::CCSequence::create(
+                        cocos2d::CCScaleTo::create(0.5f, 1.1f),
+                        cocos2d::CCScaleTo::create(0.5f, 1.0f),
+                        nullptr
+                    )
+                );
+                pulse->setTag(123);
+                m_circle->runAction(pulse);
             }
         } else {
-            m_circle->stopAllActions();
+            m_circle->stopActionByTag(123);
             m_circle->setScale(1.0f);
         }
     }
@@ -262,6 +261,7 @@ namespace {
         float thickness = Mod::get()->getSettingValue<double>("tr-2");
         float alpha = Mod::get()->getSettingValue<double>("tr-3");
         std::string color = Mod::get()->getSettingValue<std::string>("vis-3");
+        
         cocos2d::ccColor4F col = (color == "verde") ? cocos2d::ccc4f(0,1,0,alpha) : 
                                  (color == "azul")  ? cocos2d::ccc4f(0,0,1,alpha) :
                                  (color == "amarillo") ? cocos2d::ccc4f(1,1,0,alpha) :
