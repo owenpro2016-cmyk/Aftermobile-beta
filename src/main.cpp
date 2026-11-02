@@ -10,144 +10,11 @@
 #include <cocos2d.h>
 #include <cmath>
 #include <string>
-#include <vector>
 
 using namespace geode::prelude;
 
 // =====================================================================================
-// 1. CONFIGURACIÓN Y VARIABLES GLOBALES
-// =====================================================================================
-
-namespace AssistCore {
-    // Buffer circular para los inputs
-    constexpr size_t MAX_BUFFER_SIZE = 128;
-    
-    struct InputEvent {
-        bool down;
-        int button;
-        bool isP1;
-        uint64_t tick;
-    };
-
-    InputEvent g_inputQueue[MAX_BUFFER_SIZE];
-    size_t g_queueHead = 0;
-    size_t g_queueTail = 0;
-
-    uint64_t g_currentTick = 0;
-    bool g_isEmitting = false;
-
-    // Caché de obstáculos cercanos para no iterar todo el nivel
-    constexpr size_t MAX_CACHED_OBSTACLES = 64;
-    GameObject* g_cachedObstacles[MAX_CACHED_OBSTACLES];
-    size_t g_cachedCount = 0;
-
-    // Referencias de UI
-    class AssistHUD* g_hudInstance = nullptr;
-
-    // Funciones de cola
-    inline bool isQueueEmpty() { return g_queueHead == g_queueTail; }
-    inline bool isQueueFull() { return ((g_queueHead + 1) % MAX_BUFFER_SIZE) == g_queueTail; }
-    
-    void pushInput(bool down, int button, bool isP1) {
-        if (isQueueFull()) g_queueTail = (g_queueTail + 1) % MAX_BUFFER_SIZE;
-        g_inputQueue[g_queueHead] = { down, button, isP1, g_currentTick };
-        g_queueHead = (g_queueHead + 1) % MAX_BUFFER_SIZE;
-    }
-
-    void clearQueue() {
-        g_queueHead = 0;
-        g_queueTail = 0;
-    }
-}
-
-// =====================================================================================
-// 2. SIMULADOR DE FÍSICA Y PREDICCIÓN (EL CEREBRO DEL MOD)
-// =====================================================================================
-
-namespace PhysicsEngine {
-    // Constantes de física real de GD
-    constexpr float GRAVITY = 0.958199f;
-    constexpr float JUMP_VELOCITY = 11.180032f;
-    constexpr float PLAYER_SIZE = 30.0f;
-
-    // Escanea y guarda los obstáculos peligrosos (Sólidos y Pinchos) cerca del jugador
-    void updateObstacleCache(PlayLayer* pl, PlayerObject* p1) {
-        AssistCore::g_cachedCount = 0;
-        if (!pl || !p1) return;
-
-        auto* objects = pl->m_objects;
-        if (!objects) return;
-
-        float pX = p1->getPositionX();
-        float pY = p1->getPositionY();
-
-        // Solo escaneamos en un radio de 400px (aprox 3 segundos de juego)
-        for (auto* obj : CCArrayExt<GameObject*>(objects)) {
-            if (AssistCore::g_cachedCount >= AssistCore::MAX_CACHED_OBSTACLES) break;
-            
-            if (!obj) continue;
-            auto type = obj->m_objectType;
-            
-            // Solo nos importan los sólidos y los peligros
-            if (type == GameObjectType::Solid || type == GameObjectType::Hazard) {
-                float oX = obj->getPositionX();
-                float oY = obj->getPositionY();
-                
-                // Si está cerca en X
-                if (oX > pX - 100.f && oX < pX + 400.f) {
-                    // Si está cerca en Y
-                    if (oY > pY - 200.f && oY < pY + 200.f) {
-                        AssistCore::g_cachedObstacles[AssistCore::g_cachedCount++] = obj;
-                    }
-                }
-            }
-        }
-    }
-
-    // Comprueba si el jugador choca con algo en su posición actual
-    bool checkCollision(float x, float y) {
-        for (size_t i = 0; i < AssistCore::g_cachedCount; i++) {
-            auto* obj = AssistCore::g_cachedObstacles[i];
-            auto rect = obj->getObjectRect();
-            
-            // Hitbox simplificada del jugador
-            if (x + (PLAYER_SIZE/2.f) > rect.getMinX() && x - (PLAYER_SIZE/2.f) < rect.getMaxX() &&
-                y + (PLAYER_SIZE/2.f) > rect.getMinY() && y - (PLAYER_SIZE/2.f) < rect.getMaxY()) {
-                return true; // Colisión
-            }
-        }
-        return false;
-    }
-
-    // Predice si saltar AHORA resultará en muerte
-    bool isJumpSafe(PlayerObject* p1) {
-        if (!p1) return false;
-        
-        float pX = p1->getPositionX();
-        float pY = p1->getPositionY();
-        float vX = 8.4f * p1->m_speedMultiplier; // Velocidad horizontal real
-        float vY = JUMP_VELOCITY; // Velocidad inicial del salto
-
-        // Simulamos el arco del salto durante los próximos 30 ticks (aprox 0.5 seg)
-        for (int t = 1; t <= 30; ++t) {
-            // Ecuación de movimiento
-            float nextX = pX + (vX * t);
-            float nextY = pY + (vY * t) - (0.5f * GRAVITY * t * t);
-
-            // Si choca contra un pincho mientras sube o está en el aire
-            if (checkCollision(nextX, nextY)) {
-                return false; // Salto peligroso, morirá
-            }
-            
-            // Si cae por debajo de la pantalla, detener simulación
-            if (nextY < -50.f) break;
-        }
-        return true; // Es seguro saltar
-    }
-}
-
-// =====================================================================================
-// 3. INTERFAZ GRÁFICA: HUD CIRCULAR Y MENÚ
+// 1. INTERFAZ GRÁFICA: HUD CIRCULAR Y MENÚ (Declarados primero para evitar errores)
 // =====================================================================================
 
 class AssistPopup : public geode::Popup {
@@ -356,6 +223,113 @@ public:
 };
 
 // =====================================================================================
+// 2. CONFIGURACIÓN Y VARIABLES GLOBALES
+// =====================================================================================
+
+namespace AssistCore {
+    constexpr size_t MAX_BUFFER_SIZE = 128;
+    
+    struct InputEvent {
+        bool down;
+        int button;
+        bool isP1;
+        uint64_t tick;
+    };
+
+    InputEvent g_inputQueue[MAX_BUFFER_SIZE];
+    size_t g_queueHead = 0;
+    size_t g_queueTail = 0;
+
+    uint64_t g_currentTick = 0;
+    bool g_isEmitting = false;
+
+    constexpr size_t MAX_CACHED_OBSTACLES = 64;
+    GameObject* g_cachedObstacles[MAX_CACHED_OBSTACLES];
+    size_t g_cachedCount = 0;
+
+    AssistHUD* g_hudInstance = nullptr;
+
+    inline bool isQueueEmpty() { return g_queueHead == g_queueTail; }
+    inline bool isQueueFull() { return ((g_queueHead + 1) % MAX_BUFFER_SIZE) == g_queueTail; }
+    
+    void pushInput(bool down, int button, bool isP1) {
+        if (isQueueFull()) g_queueTail = (g_queueTail + 1) % MAX_BUFFER_SIZE;
+        g_inputQueue[g_queueHead] = { down, button, isP1, g_currentTick };
+        g_queueHead = (g_queueHead + 1) % MAX_BUFFER_SIZE;
+    }
+
+    void clearQueue() {
+        g_queueHead = 0;
+        g_queueTail = 0;
+    }
+}
+
+// =====================================================================================
+// 3. SIMULADOR DE FÍSICA Y PREDICCIÓN
+// =====================================================================================
+
+namespace PhysicsEngine {
+    constexpr float GRAVITY = 0.958199f;
+    constexpr float JUMP_VELOCITY = 11.180032f;
+    constexpr float PLAYER_SIZE = 30.0f;
+
+    void updateObstacleCache(PlayLayer* pl, PlayerObject* p1) {
+        AssistCore::g_cachedCount = 0;
+        if (!pl || !p1) return;
+
+        auto* objects = pl->m_objects;
+        if (!objects) return;
+
+        float pX = p1->getPositionX();
+        float pY = p1->getPositionY();
+
+        for (auto* obj : CCArrayExt<GameObject*>(objects)) {
+            if (AssistCore::g_cachedCount >= AssistCore::MAX_CACHED_OBSTACLES) break;
+            if (!obj) continue;
+            
+            auto type = obj->m_objectType;
+            if (type == GameObjectType::Solid || type == GameObjectType::Hazard) {
+                float oX = obj->getPositionX();
+                float oY = obj->getPositionY();
+                
+                if (oX > pX - 100.f && oX < pX + 400.f && oY > pY - 200.f && oY < pY + 200.f) {
+                    AssistCore::g_cachedObstacles[AssistCore::g_cachedCount++] = obj;
+                }
+            }
+        }
+    }
+
+    bool checkCollision(float x, float y) {
+        for (size_t i = 0; i < AssistCore::g_cachedCount; i++) {
+            auto* obj = AssistCore::g_cachedObstacles[i];
+            auto rect = obj->getObjectRect();
+            if (x + (PLAYER_SIZE/2.f) > rect.getMinX() && x - (PLAYER_SIZE/2.f) < rect.getMaxX() &&
+                y + (PLAYER_SIZE/2.f) > rect.getMinY() && y - (PLAYER_SIZE/2.f) < rect.getMaxY()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool isJumpSafe(PlayerObject* p1) {
+        if (!p1) return false;
+        
+        float pX = p1->getPositionX();
+        float pY = p1->getPositionY();
+        float vX = 8.4f * p1->m_speedMultiplier; 
+        float vY = JUMP_VELOCITY; 
+
+        for (int t = 1; t <= 30; ++t) {
+            float nextX = pX + (vX * t);
+            float nextY = pY + (vY * t) - (0.5f * GRAVITY * t * t);
+            if (checkCollision(nextX, nextY)) return false;
+            if (nextY < -50.f) break;
+        }
+        return true;
+    }
+}
+
+// =====================================================================================
 // 4. HOOKS DEL JUEGO (LÓGICA PRINCIPAL)
 // =====================================================================================
 
@@ -367,61 +341,42 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
             
             auto* pl = PlayLayer::get();
             if (pl && pl->m_player1) {
-                // 1. Actualizar caché de obstáculos 1 vez por tick
                 PhysicsEngine::updateObstacleCache(pl, pl->m_player1);
 
-                // 2. Procesar la cola de inputs
                 while (!AssistCore::isQueueEmpty()) {
                     auto& ev = AssistCore::g_inputQueue[AssistCore::g_queueTail];
-                    
-                    // Anti-Doble Click (30ms ~ 2 ticks)
                     uint64_t age = AssistCore::g_currentTick - ev.tick;
+                    
                     if (age > 2) {
-                        // El click ya es viejo, lo descartamos para no acumular basura
                         AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
                         continue;
                     }
 
                     if (ev.down) {
-                        // Si el jugador está en el suelo y quiere saltar
                         if (pl->m_player1->m_isOnGround) {
                             bool safe = PhysicsEngine::isJumpSafe(pl->m_player1);
                             bool autoSafe = Mod::get()->getSettingValue<bool>("trayectoria-segura");
 
-                            // Si es seguro o no tenemos la auto-seguridad activada
                             if (safe || !autoSafe) {
                                 AssistCore::g_isEmitting = true;
                                 GJBaseGameLayer::handleButton(true, ev.button, ev.isP1);
-                                GJBaseGameLayer::handleButton(false, ev.button, ev.isP1); // Release inmediato
+                                GJBaseGameLayer::handleButton(false, ev.button, ev.isP1);
                                 AssistCore::g_isEmitting = false;
                                 AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
                             } else {
-                                // No es seguro, esperamos al siguiente tick para ver si cambia
                                 break; 
                             }
                         } else {
-                            // En el aire (para orbes o vuelo)
                             AssistCore::g_isEmitting = true;
                             GJBaseGameLayer::handleButton(true, ev.button, ev.isP1);
                             AssistCore::g_isEmitting = false;
                             AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
                         }
                     } else {
-                        // Release (soltar botón)
                         AssistCore::g_isEmitting = true;
                         GJBaseGameLayer::handleButton(false, ev.button, ev.isP1);
                         AssistCore::g_isEmitting = false;
                         AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
-                    }
-                }
-
-                // 3. Auto Wave / Ship
-                if (AssistCore::isQueueEmpty()) {
-                    if (pl->m_player1->m_isDart && Mod::get()->getSettingValue<bool>("wv-1")) {
-                        // Mantener recto
-                        if (std::abs(pl->m_player1->m_yVelocity) < 0.1f) {
-                            // Micro-pulso
-                        }
                     }
                 }
             }
@@ -435,7 +390,6 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
-        // Guardamos en la cola en lugar de ejecutar directamente
         AssistCore::pushInput(down, button, isPlayer1);
     }
 };
@@ -462,7 +416,6 @@ class $modify(InputAssistPlay, PlayLayer) {
 
     void update(float dt) {
         if (Mod::get()->getSettingValue<bool>("mostrar-trayectoria") && m_player1) {
-            // Dibujo de trayectoria
             auto* drawNode = typeinfo_cast<cocos2d::CCDrawNode*>(this->getChildByID("trajectory-draw-node"));
             if (!drawNode) {
                 drawNode = cocos2d::CCDrawNode::create();
@@ -476,7 +429,10 @@ class $modify(InputAssistPlay, PlayLayer) {
             float vx = 8.4f * m_player1->m_speedMultiplier;
             float vy = m_player1->m_yVelocity;
             
-             maxTicks = Mod::get()->getSettingValue<int6int            for (int i = 0; i < maxTicks; ++i) {
+            // AQUI ESTA LA CORRECCION DEL INT64_T
+            int64_t maxTicks = Mod::get()->getSettingValue<int64_t>("tr-1");
+            
+            for (int i = 0; i < maxTicks; ++i) {
                 x += vx;
                 if (m_player1->m_isShip) vy += 0.4f;
                 else vy -= 0.958f; 
