@@ -17,6 +17,7 @@ namespace {
     uint32_t g_tickFisico = 0, g_toleranciaTicks = 7;
     float g_targetHz = 60.f, g_altitudObjetivo = 0.f, g_waveAngulo = 0.f;
     bool g_activo = false, g_altitudFijada = false;
+    bool g_emitiendo = false; // <--- NUEVA BANDERA PARA EVITAR BUCLES
 
     inline bool bufferLleno() { return ((g_cabeza + 1) % kCapBuffer) == g_cola; }
     inline bool bufferVacio() { return g_cabeza == g_cola; }
@@ -56,11 +57,13 @@ namespace {
                 g_cola = (g_cola + 1) % kCapBuffer; continue;
             }
 
-            PlayerObject* target = e->isP1 ? PlayLayer::get()->m_player1 : PlayLayer::get()->m_player2;
-            if (target) {
-                if (e->down) target->pushButton(static_cast<PlayerButton>(e->button));
-                else target->releaseButton(static_cast<PlayerButton>(e->button));
+            // AQUI ESTA LA MAGIA: Usamos la funcion del juego en lugar de pushButton a pelo
+            g_emitiendo = true;
+            if (PlayLayer::get()) {
+                PlayLayer::get()->handleButton(e->down, e->button, e->isP1);
             }
+            g_emitiendo = false;
+
             ++g_metricas.totales;
             if (tickObjetivo != static_cast<int64_t>(e->tick)) ++g_metricas.corregidos;
             g_cola = (g_cola + 1) % kCapBuffer;
@@ -69,18 +72,18 @@ namespace {
 
     void aplicarWaveRecta() {
         auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        // AQUI CAMBIAMOS m_isWave por m_isDart
         if (!p1 || !p1->m_isDart || !g_activo || !bufferVacio()) return;
         if (!Mod::get()->getSettingValue<bool>("wave-recta")) return;
         
         constexpr float umbral = 0.05f;
-        if (g_waveAngulo > umbral) p1->pushButton(PlayerButton::Jump);
-        else if (g_waveAngulo < -umbral) p1->releaseButton(PlayerButton::Jump);
+        g_emitiendo = true;
+        if (g_waveAngulo > umbral) PlayLayer::get()->handleButton(true, 1, true);
+        else if (g_waveAngulo < -umbral) PlayLayer::get()->handleButton(false, 1, true);
+        g_emitiendo = false;
     }
 
     void aplicarVueloRecto() {
         auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        // AQUI CAMBIAMOS m_isUFO por m_isBird
         if (!p1 || (!p1->m_isShip && !p1->m_isBird) || !g_activo || !bufferVacio()) return;
         if (!Mod::get()->getSettingValue<bool>("vuelo-recto")) return;
 
@@ -91,14 +94,21 @@ namespace {
         float amort = static_cast<float>(Mod::get()->getSettingValue<double>("amortiguacion-vuelo"));
         float umbral = 5.f * (1.f - amort) + 2.f;
 
-        if (error > umbral) p1->pushButton(PlayerButton::Jump);
-        else if (error < -umbral) p1->releaseButton(PlayerButton::Jump);
+        g_emitiendo = true;
+        if (error > umbral) PlayLayer::get()->handleButton(true, 1, true);
+        else if (error < -umbral) PlayLayer::get()->handleButton(false, 1, true);
+        g_emitiendo = false;
     }
 }
 
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool isPlayer1) {
-        if (!g_activo) { GJBaseGameLayer::handleButton(down, button, isPlayer1); return; }
+        // Si estamos emitiendo, dejamos que el juego original procese el click
+        if (!g_activo || g_emitiendo) { 
+            GJBaseGameLayer::handleButton(down, button, isPlayer1); 
+            return; 
+        }
+        // Si el usuario toca la pantalla, lo guardamos en el buffer
         pushEntrada(down, button, isPlayer1);
     }
 };
@@ -110,6 +120,10 @@ class $modify(InputAssistPlay, PlayLayer) {
         g_activo = (modo != "desactivado");
         if (g_activo) {
             g_targetHz = 60.f;
+            if (auto* app = CCApplication::get()) {
+                float r = app->getTargetTickRate();
+                if (r > 1.f && r < 240.f) g_targetHz = r;
+            }
             recalcularTolerancia(); limpiarBuffer(); resetMetricas();
             g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
         }
@@ -123,7 +137,6 @@ class $modify(InputAssistPlay, PlayLayer) {
     void update(float dt) {
         if (g_activo) {
             ++g_tickFisico;
-            // AQUI TAMBIEN CAMBIAMOS m_isWave por m_isDart
             if (m_player1 && m_player1->m_isDart) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
             procesarBuffer();
             aplicarWaveRecta();
