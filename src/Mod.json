@@ -1,17 +1,17 @@
 {
-    "geode": "v3.0.0",
+    "geode": "v4.0.0",
     "gd": {
         "android": "2.206"
     },
     "version": "v1.0.0",
-    "id": "tu_autor.input-assist",
-    "name": "InputAssist",
-    "developer": "TuNombre",
+    "id": "owenpro2016-cmyk.aftermobile-beta",
+    "name": "Aftermobile beta",
+    "developer": "owenpro2016-cmyk",
     "description": "Asistencia de entrada para movil: alinea los clicks al tick de fisica y evita clicks perdidos entre frames.",
-    "repository": "https://github.com/tu_usuario/InputAssist",
+    "repository": "https://github.com/owenpro2016-cmyk/Aftermobile-beta",
     "issues": {
         "info": "Reporta bugs o sugerencias aqui",
-        "url": "https://github.com/tu_usuario/InputAssist/issues"
+        "url": "https://github.com/owenpro2016-cmyk/Aftermobile-beta/issues"
     },
     "platforms": ["android32", "android64"],
     "android": {
