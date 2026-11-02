@@ -12,7 +12,6 @@ jobs:
         id: build
         with:
           target: Android64
-          sdk: 'latest'  # Forza el uso de la última versión estable del SDK
           
       - uses: actions/upload-artifact@v4
         with:
