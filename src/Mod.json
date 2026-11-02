@@ -1,5 +1,5 @@
 {
-    "geode": "v4.0.0",
+    "geode": "v3.0.0",
     "gd": {
         "android": "2.206"
     },
@@ -7,12 +7,7 @@
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile beta",
     "developer": "owenpro2016-cmyk",
-    "description": "Asistencia de entrada para movil: alinea los clicks al tick de fisica y evita clicks perdidos entre frames.",
-    "repository": "https://github.com/owenpro2016-cmyk/Aftermobile-beta",
-    "issues": {
-        "info": "Reporta bugs o sugerencias aqui",
-        "url": "https://github.com/owenpro2016-cmyk/Aftermobile-beta/issues"
-    },
+    "description": "Asistencia de entrada para movil.",
     "platforms": ["android32", "android64"],
     "android": {
         "min_sdk": 21,
@@ -26,40 +21,6 @@
             "type": "string",
             "default": "equilibrado",
             "one-of": ["desactivado", "suave", "equilibrado", "agresivo", "personalizado"]
-        },
-        "alinear-clicks": {
-            "name": "Alinear clicks al frame",
-            "description": "Reemite cada toque en el tick exacto de fisica.",
-            "type": "bool",
-            "default": true
-        },
-        "desfase-frames": {
-            "name": "Desfase en frames",
-            "description": "Adelanta o retrasa el click. 0 = alineado exacto.",
-            "type": "int",
-            "default": 0,
-            "min": -3,
-            "max": 3
-        },
-        "corregir-click-temprano": {
-            "name": "Corregir click temprano",
-            "description": "Si pulsas antes de tiempo, el input se retiene y se reemite en el primer tick seguro.",
-            "type": "bool",
-            "default": true
-        },
-        "tolerancia-ms": {
-            "name": "Tolerancia de correccion (ms)",
-            "description": "Cuanto tiempo antes puedes pulsar sin que el click se descarte.",
-            "type": "int",
-            "default": 120,
-            "min": 30,
-            "max": 250
-        },
-        "mostrar-hud": {
-            "name": "Mostrar indicador en pantalla",
-            "description": "HUD discreto con estado y metricas. Se puede arrastrar.",
-            "type": "bool",
-            "default": true
         }
     }
 }
