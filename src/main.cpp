@@ -57,9 +57,13 @@ namespace {
                 g_cola = (g_cola + 1) % kCapBuffer; continue;
             }
 
+            // Log para debug (lo verás en la consola de Geode si lo activas)
+            log::debug("Emitiendo click: down={} button={}", e->down, e->button);
+
             g_emitiendo = true;
             if (PlayLayer::get()) {
-                PlayLayer::get()->handleButton(e->down, e->button, e->isP1);
+                // Llamamos a la funcion original del juego de forma segura
+                static_cast<GJBaseGameLayer*>(PlayLayer::get())->handleButton(e->down, e->button, e->isP1);
             }
             g_emitiendo = false;
 
@@ -100,7 +104,19 @@ namespace {
     }
 }
 
+// Movemos la logica del reloj a GJBaseGameLayer que es el verdadero motor del juego
 class $modify(InputAssistBase, GJBaseGameLayer) {
+    void update(float dt) {
+        if (g_activo) {
+            ++g_tickFisico;
+            if (m_player1 && m_player1->m_isDart) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
+            procesarBuffer();
+            aplicarWaveRecta();
+            aplicarVueloRecto();
+        }
+        GJBaseGameLayer::update(dt);
+    }
+
     void handleButton(bool down, int button, bool isPlayer1) {
         if (!g_activo || g_emitiendo) { 
             GJBaseGameLayer::handleButton(down, button, isPlayer1); 
@@ -116,7 +132,7 @@ class $modify(InputAssistPlay, PlayLayer) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
         g_activo = (modo != "desactivado");
         if (g_activo) {
-            g_targetHz = 60.f; // Fijado a 60 porque la fisica de GD siempre corre a 60 ticks
+            g_targetHz = 60.f; 
             recalcularTolerancia(); limpiarBuffer(); resetMetricas();
             g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
         }
@@ -125,17 +141,6 @@ class $modify(InputAssistPlay, PlayLayer) {
 
     void resetLevel() {
         PlayLayer::resetLevel(); limpiarBuffer(); g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
-    }
-
-    void update(float dt) {
-        if (g_activo) {
-            ++g_tickFisico;
-            if (m_player1 && m_player1->m_isDart) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
-            procesarBuffer();
-            aplicarWaveRecta();
-            aplicarVueloRecto();
-        }
-        PlayLayer::update(dt);
     }
 };
 
