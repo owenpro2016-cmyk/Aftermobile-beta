@@ -14,10 +14,12 @@ using namespace geode::prelude;
 // 1. VENTANA DE OPCIONES DECORADA (POPUP)
 // =====================================================================================
 
-class AssistPopup : public geode::Popup<> {
+// CORRECCIÓN: geode::Popup ya no es una plantilla en v5.10.1
+class AssistPopup : public geode::Popup {
 protected:
     bool init() override {
-        if (!Popup::init(280.f, 220.f, "GJ_square01.png")) return false;
+        // CORRECCIÓN: Usamos la firma de init documentada para v5
+        if (!Popup::init(280.f, 220.f)) return false;
         this->setTitle("Aftermobile Beta");
 
         auto* menu = CCMenu::create();
@@ -147,14 +149,13 @@ public:
 };
 
 // =====================================================================================
-// 3. VARIABLES GLOBALES Y LÓGICA DE FÍSICA (SISTEMA ARREGLADO)
+// 3. VARIABLES GLOBALES Y LÓGICA DE FÍSICA
 // =====================================================================================
 
 namespace {
     uint64_t g_tickFisico = 0;
     bool g_emitiendo = false;
     
-    // Sistema simple: Solo guardamos si se presionó o soltó en este frame
     bool g_inputDown[2] = {false, false};
     bool g_inputReleased[2] = {false, false};
     bool g_isHeld[2] = {false, false};
@@ -205,7 +206,6 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
         if (modo != "desactivado") {
             ++g_tickFisico;
             
-            // Procesar los inputs en el tick exacto de física
             for (int p = 0; p < 2; p++) {
                 if (g_inputDown[p]) {
                     g_inputDown[p] = false;
@@ -230,13 +230,11 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
     void handleButton(bool down, int button, bool isPlayer1) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
         
-        // Si el mod está apagado o nosotros estamos emitiendo, pasa normal
         if (modo == "desactivado" || g_emitiendo) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
 
-        // Si el jugador tocó, guardamos el input para el próximo tick de física
         int p = isPlayer1 ? 0 : 1;
         if (down) g_inputDown[p] = true;
         else g_inputReleased[p] = true;
@@ -300,5 +298,5 @@ class $modify(PauseLayerHook, PauseLayer) {
 };
 
 $on_mod(Loaded) {
-    log::info("Aftermobile Beta: Sistema de input simple cargado.");
+    log::info("Aftermobile Beta: Popup corregido para SDK v5.");
 }
