@@ -3,17 +3,151 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/binding/GameObject.hpp>
+#include <Geode/binding/EffectGameObject.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <cocos2d.h>
 #include <cmath>
 #include <string>
+#include <vector>
 
 using namespace geode::prelude;
 
 // =====================================================================================
-// 1. VENTANA DE OPCIONES (MENU CON PESTAÑAS Y SCROLL)
+// 1. CONFIGURACIÓN Y VARIABLES GLOBALES
+// =====================================================================================
+
+namespace AssistCore {
+    // Buffer circular para los inputs
+    constexpr size_t MAX_BUFFER_SIZE = 128;
+    
+    struct InputEvent {
+        bool down;
+        int button;
+        bool isP1;
+        uint64_t tick;
+    };
+
+    InputEvent g_inputQueue[MAX_BUFFER_SIZE];
+    size_t g_queueHead = 0;
+    size_t g_queueTail = 0;
+
+    uint64_t g_currentTick = 0;
+    bool g_isEmitting = false;
+
+    // Caché de obstáculos cercanos para no iterar todo el nivel
+    constexpr size_t MAX_CACHED_OBSTACLES = 64;
+    GameObject* g_cachedObstacles[MAX_CACHED_OBSTACLES];
+    size_t g_cachedCount = 0;
+
+    // Referencias de UI
+    class AssistHUD* g_hudInstance = nullptr;
+
+    // Funciones de cola
+    inline bool isQueueEmpty() { return g_queueHead == g_queueTail; }
+    inline bool isQueueFull() { return ((g_queueHead + 1) % MAX_BUFFER_SIZE) == g_queueTail; }
+    
+    void pushInput(bool down, int button, bool isP1) {
+        if (isQueueFull()) g_queueTail = (g_queueTail + 1) % MAX_BUFFER_SIZE;
+        g_inputQueue[g_queueHead] = { down, button, isP1, g_currentTick };
+        g_queueHead = (g_queueHead + 1) % MAX_BUFFER_SIZE;
+    }
+
+    void clearQueue() {
+        g_queueHead = 0;
+        g_queueTail = 0;
+    }
+}
+
+// =====================================================================================
+// 2. SIMULADOR DE FÍSICA Y PREDICCIÓN (EL CEREBRO DEL MOD)
+// =====================================================================================
+
+namespace PhysicsEngine {
+    // Constantes de física real de GD
+    constexpr float GRAVITY = 0.958199f;
+    constexpr float JUMP_VELOCITY = 11.180032f;
+    constexpr float PLAYER_SIZE = 30.0f;
+
+    // Escanea y guarda los obstáculos peligrosos (Sólidos y Pinchos) cerca del jugador
+    void updateObstacleCache(PlayLayer* pl, PlayerObject* p1) {
+        AssistCore::g_cachedCount = 0;
+        if (!pl || !p1) return;
+
+        auto* objects = pl->m_objects;
+        if (!objects) return;
+
+        float pX = p1->getPositionX();
+        float pY = p1->getPositionY();
+
+        // Solo escaneamos en un radio de 400px (aprox 3 segundos de juego)
+        for (auto* obj : CCArrayExt<GameObject*>(objects)) {
+            if (AssistCore::g_cachedCount >= AssistCore::MAX_CACHED_OBSTACLES) break;
+            
+            if (!obj) continue;
+            auto type = obj->m_objectType;
+            
+            // Solo nos importan los sólidos y los peligros
+            if (type == GameObjectType::Solid || type == GameObjectType::Hazard) {
+                float oX = obj->getPositionX();
+                float oY = obj->getPositionY();
+                
+                // Si está cerca en X
+                if (oX > pX - 100.f && oX < pX + 400.f) {
+                    // Si está cerca en Y
+                    if (oY > pY - 200.f && oY < pY + 200.f) {
+                        AssistCore::g_cachedObstacles[AssistCore::g_cachedCount++] = obj;
+                    }
+                }
+            }
+        }
+    }
+
+    // Comprueba si el jugador choca con algo en su posición actual
+    bool checkCollision(float x, float y) {
+        for (size_t i = 0; i < AssistCore::g_cachedCount; i++) {
+            auto* obj = AssistCore::g_cachedObstacles[i];
+            auto rect = obj->getObjectRect();
+            
+            // Hitbox simplificada del jugador
+            if (x + (PLAYER_SIZE/2.f) > rect.getMinX() && x - (PLAYER_SIZE/2.f) < rect.getMaxX() &&
+                y + (PLAYER_SIZE/2.f) > rect.getMinY() && y - (PLAYER_SIZE/2.f) < rect.getMaxY()) {
+                return true; // Colisión
+            }
+        }
+        return false;
+    }
+
+    // Predice si saltar AHORA resultará en muerte
+    bool isJumpSafe(PlayerObject* p1) {
+        if (!p1) return false;
+        
+        float pX = p1->getPositionX();
+        float pY = p1->getPositionY();
+        float vX = 8.4f * p1->m_speedMultiplier; // Velocidad horizontal real
+        float vY = JUMP_VELOCITY; // Velocidad inicial del salto
+
+        // Simulamos el arco del salto durante los próximos 30 ticks (aprox 0.5 seg)
+        for (int t = 1; t <= 30; ++t) {
+            // Ecuación de movimiento
+            float nextX = pX + (vX * t);
+            float nextY = pY + (vY * t) - (0.5f * GRAVITY * t * t);
+
+            // Si choca contra un pincho mientras sube o está en el aire
+            if (checkCollision(nextX, nextY)) {
+                return false; // Salto peligroso, morirá
+            }
+            
+            // Si cae por debajo de la pantalla, detener simulación
+            if (nextY < -50.f) break;
+        }
+        return true; // Es seguro saltar
+    }
+}
+
+// =====================================================================================
+// 3. INTERFAZ GRÁFICA: HUD CIRCULAR Y MENÚ
 // =====================================================================================
 
 class AssistPopup : public geode::Popup {
@@ -22,210 +156,95 @@ protected:
     cocos2d::CCMenu* m_tabMenu = nullptr;
     int m_currentTab = 0;
 
-    // --- Funciones de creación de UI ---
-
-    void createToggle(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
+    void createToggle(cocos2d::CCLayer* parent, std::string id, std::string text, cocos2d::CCPoint pos) {
         auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition(pos);
+        label->setScale(0.35f); label->setAnchorPoint({0.f, 0.5f}); label->setPosition(pos);
         parent->addChild(label);
 
-        auto* toggleSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
-        auto* toggleOnSpr = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-        auto* toggler = CCMenuItemToggler::create(toggleSpr, toggleOnSpr, this, menu_selector(AssistPopup::onToggleSetting));
+        auto* toggler = CCMenuItemToggler::create(
+            CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png"),
+            CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png"),
+            this, menu_selector(AssistPopup::onToggle)
+        );
         toggler->setPosition({pos.x + 200.f, pos.y});
-        toggler->setID(settingID);
-        toggler->toggle(Mod::get()->getSettingValue<bool>(settingID));
+        toggler->setID(id);
+        toggler->toggle(Mod::get()->getSettingValue<bool>(id));
 
-        auto* menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        menu->addChild(toggler);
-        parent->addChild(menu);
+        auto* menu = CCMenu::create(); menu->setPosition({0, 0});
+        menu->addChild(toggler); parent->addChild(menu);
     }
 
-    void createIntSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
+    void createIntSetting(cocos2d::CCLayer* parent, std::string id, std::string text, cocos2d::CCPoint pos) {
         auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition(pos);
+        label->setScale(0.35f); label->setAnchorPoint({0.f, 0.5f}); label->setPosition(pos);
         parent->addChild(label);
 
-        int64_t val = Mod::get()->getSettingValue<int64_t>(settingID);
+        int64_t val = Mod::get()->getSettingValue<int64_t>(id);
         auto* valLabel = CCLabelBMFont::create(std::to_string(val).c_str(), "bigFont.fnt");
-        valLabel->setScale(0.45f);
-        valLabel->setPosition({pos.x + 140.f, pos.y});
+        valLabel->setScale(0.45f); valLabel->setPosition({pos.x + 140.f, pos.y});
         parent->addChild(valLabel);
 
-        auto* menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        parent->addChild(menu);
+        auto* menu = CCMenu::create(); menu->setPosition({0, 0}); parent->addChild(menu);
 
-        auto* minusSpr = ButtonSprite::create("-", "bigFont.fnt", "GJ_button_04.png", 0.4f);
-        auto* minusBtn = CCMenuItemSpriteExtra::create(minusSpr, this, menu_selector(AssistPopup::onIntMinus));
-        minusBtn->setPosition({pos.x + 110.f, pos.y});
-        minusBtn->setID(settingID);
-        menu->addChild(minusBtn);
+        auto* minus = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("-", "bigFont.fnt", "GJ_button_04.png", 0.4f),
+            this, menu_selector(AssistPopup::onIntMinus)
+        );
+        minus->setPosition({pos.x + 110.f, pos.y}); minus->setID(id); menu->addChild(minus);
 
-        auto* plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_04.png", 0.4f);
-        auto* plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(AssistPopup::onIntPlus));
-        plusBtn->setPosition({pos.x + 170.f, pos.y});
-        plusBtn->setID(settingID);
-        menu->addChild(plusBtn);
+        auto* plus = CCMenuItemSpriteExtra::create(
+            ButtonSprite::create("+", "bigFont.fnt", "GJ_button_04.png", 0.4f),
+            this, menu_selector(AssistPopup::onIntPlus)
+        );
+        plus->setPosition({pos.x + 170.f, pos.y}); plus->setID(id); menu->addChild(plus);
     }
 
-    void createFloatSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
-        auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition(pos);
-        parent->addChild(label);
-
-        double val = Mod::get()->getSettingValue<double>(settingID);
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.1f", val);
-        auto* valLabel = CCLabelBMFont::create(buf, "bigFont.fnt");
-        valLabel->setScale(0.45f);
-        valLabel->setPosition({pos.x + 140.f, pos.y});
-        parent->addChild(valLabel);
-
-        auto* menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        parent->addChild(menu);
-
-        auto* minusSpr = ButtonSprite::create("-", "bigFont.fnt", "GJ_button_04.png", 0.4f);
-        auto* minusBtn = CCMenuItemSpriteExtra::create(minusSpr, this, menu_selector(AssistPopup::onFloatMinus));
-        minusBtn->setPosition({pos.x + 110.f, pos.y});
-        minusBtn->setID(settingID);
-        menu->addChild(minusBtn);
-
-        auto* plusSpr = ButtonSprite::create("+", "bigFont.fnt", "GJ_button_04.png", 0.4f);
-        auto* plusBtn = CCMenuItemSpriteExtra::create(plusSpr, this, menu_selector(AssistPopup::onFloatPlus));
-        plusBtn->setPosition({pos.x + 170.f, pos.y});
-        plusBtn->setID(settingID);
-        menu->addChild(plusBtn);
-    }
-
-    void createColorSetting(cocos2d::CCLayer* parent, std::string settingID, std::string text, cocos2d::CCPoint pos) {
-        auto* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-        label->setScale(0.35f);
-        label->setAnchorPoint({0.f, 0.5f});
-        label->setPosition(pos);
-        parent->addChild(label);
-
-        auto* menu = CCMenu::create();
-        menu->setPosition({0, 0});
-        parent->addChild(menu);
-
-        auto* btnSpr = ButtonSprite::create("Color", "bigFont.fnt", "GJ_button_04.png", 0.4f);
-        auto* btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(AssistPopup::onColorClick));
-        btn->setPosition({pos.x + 150.f, pos.y});
-        btn->setID(settingID);
-        menu->addChild(btn);
-    }
-
-    // --- Callbacks de UI ---
-
-    void onToggleSetting(CCObject* sender) {
-        auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
-        if (toggler) Mod::get()->setSettingValue<bool>(toggler->getID(), toggler->isToggled());
+    void onToggle(CCObject* sender) {
+        auto* t = typeinfo_cast<CCMenuItemToggler*>(sender);
+        if (t) Mod::get()->setSettingValue<bool>(t->getID(), t->isToggled());
     }
 
     void onIntMinus(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        std::string id = btn->getID();
-        int64_t val = Mod::get()->getSettingValue<int64_t>(id);
-        int64_t step = (id == "cb-1") ? 1 : 5;
-        val -= step;
+        auto* b = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = b->getID();
+        int64_t val = Mod::get()->getSettingValue<int64_t>(id) - 1;
         if (val < 0) val = 0;
-        if (id == "cb-1" && val < 1) val = 1;
         Mod::get()->setSettingValue<int64_t>(id, val);
         buildTab(m_currentTab);
     }
 
     void onIntPlus(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        std::string id = btn->getID();
-        int64_t val = Mod::get()->getSettingValue<int64_t>(id);
-        int64_t step = (id == "cb-1") ? 1 : 5;
-        val += step;
-        int64_t maxVal = (id == "cb-1") ? 20 : (id == "cb-2" ? 300 : 100);
-        if (val > maxVal) val = maxVal;
+        auto* b = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        std::string id = b->getID();
+        int64_t val = Mod::get()->getSettingValue<int64_t>(id) + 1;
         Mod::get()->setSettingValue<int64_t>(id, val);
         buildTab(m_currentTab);
     }
 
-    void onFloatMinus(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        std::string id = btn->getID();
-        double val = Mod::get()->getSettingValue<double>(id);
-        val -= 0.1;
-        if (val < 0.1) val = 0.1;
-        Mod::get()->setSettingValue<double>(id, val);
-        buildTab(m_currentTab);
-    }
-
-    void onFloatPlus(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        std::string id = btn->getID();
-        double val = Mod::get()->getSettingValue<double>(id);
-        val += 0.1;
-        if (val > 1.0) val = 1.0;
-        Mod::get()->setSettingValue<double>(id, val);
-        buildTab(m_currentTab);
-    }
-
-    void onColorClick(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        std::string id = btn->getID();
-        std::string col = Mod::get()->getSettingValue<std::string>(id);
-        if (col == "rojo") col = "verde";
-        else if (col == "verde") col = "azul";
-        else if (col == "azul") col = "amarillo";
-        else col = "rojo";
-        Mod::get()->setSettingValue<std::string>(id, col);
-        buildTab(m_currentTab);
-    }
-
     void onTab(CCObject* sender) {
-        auto* btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
-        if (btn) buildTab(btn->getTag());
+        auto* b = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+        if (b) buildTab(b->getTag());
     }
 
     void buildTab(int tab) {
         m_contentLayer->removeAllChildren();
         m_currentTab = tab;
-
-        auto* scroll = ScrollLayer::create({260.f, 190.f});
-        scroll->setPosition({20.f, 20.f});
+        auto* scroll = ScrollLayer::create({260.f, 190.f}); scroll->setPosition({20.f, 20.f});
         m_contentLayer->addChild(scroll);
-        
-        auto* content = scroll->m_contentLayer;
-        content->setContentSize({260.f, 260.f}); // Altura para hacer scroll
+        auto* content = scroll->m_contentLayer; content->setContentSize({260.f, 260.f});
 
         float y = 240.f;
-        if (tab == 0) { // Input
-            createIntSetting(content, "cb-1", "Buffer Maximo", {10, y}); y -= 35;
-            createIntSetting(content, "cb-2", "Tolerancia (ms)", {10, y}); y -= 35;
-            createIntSetting(content, "cb-3", "Anti-Doble Click", {10, y}); y -= 35;
-            createIntSetting(content, "cb-4", "Hold Delay", {10, y}); y -= 35;
-        } else if (tab == 1) { // Trayectoria
-            createToggle(content, "mostrar-trayectoria", "Mostrar Trayectoria", {10, y}); y -= 35;
-            createIntSetting(content, "tr-1", "Longitud", {10, y}); y -= 35;
-            createFloatSetting(content, "tr-2", "Grosor", {10, y}); y -= 35;
-            createFloatSetting(content, "tr-3", "Opacidad", {10, y}); y -= 35;
-            createColorSetting(content, "vis-3", "Color", {10, y}); y -= 35;
-        } else if (tab == 2) { // Wave/Ship
-            createToggle(content, "wv-1", "Wave Recta", {10, y}); y -= 35;
-            createFloatSetting(content, "wv-2", "Fuerza Wave", {10, y}); y -= 35;
-            createToggle(content, "sh-1", "Ship Altitud", {10, y}); y -= 35;
-            createFloatSetting(content, "sh-2", "Amortiguacion", {10, y}); y -= 35;
-        } else if (tab == 3) { // Visuales
-            createToggle(content, "mostrar-hud", "Mostrar Icono AM", {10, y}); y -= 35;
-            createToggle(content, "vis-1", "Efecto Pulso", {10, y}); y -= 35;
-            createToggle(content, "vis-2", "Destellos", {10, y}); y -= 35;
+        if (tab == 0) { 
+            createIntSetting(content, "cb-1", "Buffer Max (Ticks)", {10, y}); y -= 35;
+            createIntSetting(content, "cb-2", "Tolerancia (Ticks)", {10, y}); y -= 35;
+            createToggle(content, "trayectoria-segura", "Evitar Choques Auto", {10, y}); y -= 35;
+        } else if (tab == 1) { 
+            createToggle(content, "mostrar-trayectoria", "Mostrar Puntos", {10, y}); y -= 35;
+            createIntSetting(content, "tr-1", "Longitud Puntos", {10, y}); y -= 35;
+        } else if (tab == 2) { 
+            createToggle(content, "wv-1", "Wave Recta Auto", {10, y}); y -= 35;
+            createToggle(content, "sh-1", "Ship Altitud Auto", {10, y}); y -= 35;
         }
-        
         scroll->moveToTop();
     }
 
@@ -234,26 +253,20 @@ protected:
         this->setTitle("Aftermobile UI");
 
         auto* bg = cocos2d::CCLayerColor::create(cocos2d::ccc4(10, 20, 10, 255), 280.f, 240.f);
-        bg->setPosition({10.f, 10.f});
-        m_mainLayer->addChild(bg, -1);
+        bg->setPosition({10.f, 10.f}); m_mainLayer->addChild(bg, -1);
 
-        m_tabMenu = CCMenu::create();
-        m_tabMenu->setPosition({0, 0});
-        m_mainLayer->addChild(m_tabMenu);
-
-        const char* tabs[] = {"Input", "Tray", "Fisica", "Vis"};
-        for (int i = 0; i < 4; ++i) {
-            auto* spr = ButtonSprite::create(tabs[i], "bigFont.fnt", "GJ_button_04.png", 0.4f);
-            auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(AssistPopup::onTab));
-            btn->setPosition({35.f + i * 65.f, 240.f});
-            btn->setTag(i);
-            m_tabMenu->addChild(btn);
+        m_tabMenu = CCMenu::create(); m_tabMenu->setPosition({0, 0}); m_mainLayer->addChild(m_tabMenu);
+        const char* tabs[] = {"Input", "Tray", "Auto"};
+        for (int i = 0; i < 3; ++i) {
+            auto* btn = CCMenuItemSpriteExtra::create(
+                ButtonSprite::create(tabs[i], "bigFont.fnt", "GJ_button_04.png", 0.4f),
+                this, menu_selector(AssistPopup::onTab)
+            );
+            btn->setPosition({35.f + i * 85.f, 240.f}); btn->setTag(i); m_tabMenu->addChild(btn);
         }
 
-        m_contentLayer = cocos2d::CCLayer::create();
-        m_mainLayer->addChild(m_contentLayer);
+        m_contentLayer = cocos2d::CCLayer::create(); m_mainLayer->addChild(m_contentLayer);
         buildTab(0);
-
         return true;
     }
 
@@ -261,14 +274,9 @@ public:
     static AssistPopup* create() {
         auto* ret = new AssistPopup();
         if (ret->init()) { ret->autorelease(); return ret; }
-        delete ret;
-        return nullptr;
+        delete ret; return nullptr;
     }
 };
-
-// =====================================================================================
-// 2. HUD CIRCULAR ANIMADO (COMO LA IMAGEN)
-// =====================================================================================
 
 class AssistHUD : public cocos2d::CCLayer {
 public:
@@ -279,26 +287,20 @@ public:
     static AssistHUD* create() {
         auto* ret = new AssistHUD();
         if (ret->init()) { ret->autorelease(); return ret; }
-        delete ret;
-        return nullptr;
+        delete ret; return nullptr;
     }
 
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        // Círculo negro con borde verde neón
         m_circle = cocos2d::CCDrawNode::create();
         m_circle->drawCircle({0, 0}, 28.f, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 1.f), 3.f, cocos2d::ccc4f(0.f, 1.f, 0.f, 1.f), 32);
         this->addChild(m_circle);
 
-        // Texto "am"
         m_label = cocos2d::CCLabelBMFont::create("am", "bigFont.fnt");
-        m_label->setScale(0.9f);
-        m_label->setColor({0, 255, 0});
-        m_label->setPosition({0, -2});
+        m_label->setScale(0.9f); m_label->setColor({0, 255, 0}); m_label->setPosition({0, -2});
         this->addChild(m_label);
 
-        // Destellos
         m_sparkles = cocos2d::CCNode::create();
         for(int i=0; i<4; i++) {
             auto* dot = cocos2d::CCDrawNode::create();
@@ -310,8 +312,7 @@ public:
         m_sparkles->runAction(cocos2d::CCRepeatForever::create(cocos2d::CCRotateBy::create(2.0f, 360.f)));
         this->addChild(m_sparkles);
 
-        this->setTouchEnabled(true);
-        this->setTouchMode(cocos2d::kCCTouchesOneByOne);
+        this->setTouchEnabled(true); this->setTouchMode(cocos2d::kCCTouchesOneByOne);
         this->setTouchPriority(-500); 
         this->setPosition({50, cocos2d::CCDirector::get()->getWinSize().height - 100});
         this->scheduleUpdate();
@@ -328,117 +329,100 @@ public:
         bool showPulse = Mod::get()->getSettingValue<bool>("vis-1");
         if (showPulse) {
             if (!m_circle->getActionByTag(123)) {
-                auto* pulse = cocos2d::CCRepeatForever::create(
-                    cocos2d::CCSequence::create(
-                        cocos2d::CCScaleTo::create(0.5f, 1.1f),
-                        cocos2d::CCScaleTo::create(0.5f, 1.0f),
-                        nullptr
-                    )
-                );
-                pulse->setTag(123);
-                m_circle->runAction(pulse);
+                auto* pulse = cocos2d::CCRepeatForever::create(cocos2d::CCSequence::create(
+                    cocos2d::CCScaleTo::create(0.5f, 1.1f), cocos2d::CCScaleTo::create(0.5f, 1.0f), nullptr));
+                pulse->setTag(123); m_circle->runAction(pulse);
             }
         } else {
-            m_circle->stopActionByTag(123);
-            m_circle->setScale(1.0f);
+            m_circle->stopActionByTag(123); m_circle->setScale(1.0f);
         }
     }
 
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
-        auto pos = this->convertTouchToNodeSpace(touch);
-        return pos.getLengthSq() < 900.f;
+        return this->convertTouchToNodeSpace(touch).getLengthSq() < 900.f;
     }
-
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         this->setPosition(this->getPosition() + touch->getDelta());
     }
-
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto delta = touch->getDelta();
         if (std::abs(delta.x) < 5 && std::abs(delta.y) < 5) {
             AssistPopup::create()->show();
         }
     }
-
     void registerWithTouchDispatcher() override {
         cocos2d::CCDirector::get()->getTouchDispatcher()->addTargetedDelegate(this, -500, true);
     }
 };
 
 // =====================================================================================
-// 3. MOTOR DE INPUT Y TRAYECTORIA
+// 4. HOOKS DEL JUEGO (LÓGICA PRINCIPAL)
 // =====================================================================================
-
-namespace {
-    uint64_t g_tickFisico = 0;
-    bool g_emitiendo = false;
-    
-    bool g_inputDown[2] = {false, false};
-    bool g_inputReleased[2] = {false, false};
-    
-    AssistHUD* g_hud = nullptr;
-
-    void dibujarTrayectoria(PlayLayer* pl) {
-        if (!pl || !pl->m_player1) return;
-        
-        auto* drawNode = typeinfo_cast<cocos2d::CCDrawNode*>(pl->getChildByID("trajectory-draw-node"));
-        if (!drawNode) {
-            drawNode = cocos2d::CCDrawNode::create();
-            drawNode->setID("trajectory-draw-node");
-            pl->addChild(drawNode, 100);
-        }
-        drawNode->clear();
-        
-        if (!Mod::get()->getSettingValue<bool>("mostrar-trayectoria")) return;
-
-        auto* p1 = pl->m_player1;
-        float x = p1->getPositionX();
-        float y = p1->getPositionY();
-        float vx = 8.4f; 
-        float vy = p1->m_yVelocity;
-        
-        int maxTicks = Mod::get()->getSettingValue<int64_t>("tr-1");
-        float thickness = Mod::get()->getSettingValue<double>("tr-2");
-        float alpha = Mod::get()->getSettingValue<double>("tr-3");
-        std::string color = Mod::get()->getSettingValue<std::string>("vis-3");
-        
-        cocos2d::ccColor4F col = (color == "verde") ? cocos2d::ccc4f(0,1,0,alpha) : 
-                                 (color == "azul")  ? cocos2d::ccc4f(0,0,1,alpha) :
-                                 (color == "amarillo") ? cocos2d::ccc4f(1,1,0,alpha) :
-                                 cocos2d::ccc4f(1,0,0,alpha); // rojo por defecto
-
-        for (int i = 0; i < maxTicks; ++i) {
-            x += vx;
-            if (p1->m_isShip) vy += 0.4f;
-            else if (p1->m_isBird) vy -= 0.958f;
-            else vy -= 0.958f; 
-            
-            y += vy;
-            drawNode->drawDot({x, y}, thickness, col);
-            if (y < 0) break;
-        }
-    }
-}
 
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void update(float dt) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
-        
         if (modo != "desactivado") {
-            ++g_tickFisico;
+            AssistCore::g_currentTick++;
             
-            for (int p = 0; p < 2; p++) {
-                if (g_inputDown[p]) {
-                    g_inputDown[p] = false;
-                    g_emitiendo = true;
-                    GJBaseGameLayer::handleButton(true, 1, p == 0);
-                    g_emitiendo = false;
+            auto* pl = PlayLayer::get();
+            if (pl && pl->m_player1) {
+                // 1. Actualizar caché de obstáculos 1 vez por tick
+                PhysicsEngine::updateObstacleCache(pl, pl->m_player1);
+
+                // 2. Procesar la cola de inputs
+                while (!AssistCore::isQueueEmpty()) {
+                    auto& ev = AssistCore::g_inputQueue[AssistCore::g_queueTail];
+                    
+                    // Anti-Doble Click (30ms ~ 2 ticks)
+                    uint64_t age = AssistCore::g_currentTick - ev.tick;
+                    if (age > 2) {
+                        // El click ya es viejo, lo descartamos para no acumular basura
+                        AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
+                        continue;
+                    }
+
+                    if (ev.down) {
+                        // Si el jugador está en el suelo y quiere saltar
+                        if (pl->m_player1->m_isOnGround) {
+                            bool safe = PhysicsEngine::isJumpSafe(pl->m_player1);
+                            bool autoSafe = Mod::get()->getSettingValue<bool>("trayectoria-segura");
+
+                            // Si es seguro o no tenemos la auto-seguridad activada
+                            if (safe || !autoSafe) {
+                                AssistCore::g_isEmitting = true;
+                                GJBaseGameLayer::handleButton(true, ev.button, ev.isP1);
+                                GJBaseGameLayer::handleButton(false, ev.button, ev.isP1); // Release inmediato
+                                AssistCore::g_isEmitting = false;
+                                AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
+                            } else {
+                                // No es seguro, esperamos al siguiente tick para ver si cambia
+                                break; 
+                            }
+                        } else {
+                            // En el aire (para orbes o vuelo)
+                            AssistCore::g_isEmitting = true;
+                            GJBaseGameLayer::handleButton(true, ev.button, ev.isP1);
+                            AssistCore::g_isEmitting = false;
+                            AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
+                        }
+                    } else {
+                        // Release (soltar botón)
+                        AssistCore::g_isEmitting = true;
+                        GJBaseGameLayer::handleButton(false, ev.button, ev.isP1);
+                        AssistCore::g_isEmitting = false;
+                        AssistCore::g_queueTail = (AssistCore::g_queueTail + 1) % AssistCore::MAX_BUFFER_SIZE;
+                    }
                 }
-                if (g_inputReleased[p]) {
-                    g_inputReleased[p] = false;
-                    g_emitiendo = true;
-                    GJBaseGameLayer::handleButton(false, 1, p == 0);
-                    g_emitiendo = false;
+
+                // 3. Auto Wave / Ship
+                if (AssistCore::isQueueEmpty()) {
+                    if (pl->m_player1->m_isDart && Mod::get()->getSettingValue<bool>("wv-1")) {
+                        // Mantener recto
+                        if (std::abs(pl->m_player1->m_yVelocity) < 0.1f) {
+                            // Micro-pulso
+                        }
+                    }
                 }
             }
         }
@@ -447,14 +431,12 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
 
     void handleButton(bool down, int button, bool isPlayer1) {
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
-        if (modo == "desactivado" || g_emitiendo) {
+        if (modo == "desactivado" || AssistCore::g_isEmitting) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
-
-        int p = isPlayer1 ? 0 : 1;
-        if (down) g_inputDown[p] = true;
-        else g_inputReleased[p] = true;
+        // Guardamos en la cola en lugar de ejecutar directamente
+        AssistCore::pushInput(down, button, isPlayer1);
     }
 };
 
@@ -462,27 +444,46 @@ class $modify(InputAssistPlay, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         
-        g_tickFisico = 0;
-        g_inputDown[0] = g_inputDown[1] = false;
-        g_inputReleased[0] = g_inputReleased[1] = false;
+        AssistCore::g_currentTick = 0;
+        AssistCore::clearQueue();
         
-        if (!g_hud) {
-            g_hud = AssistHUD::create();
-            this->addChild(g_hud, 9999);
+        if (!AssistCore::g_hudInstance) {
+            AssistCore::g_hudInstance = AssistHUD::create();
+            this->addChild(AssistCore::g_hudInstance, 9999);
         }
         return true;
     }
 
     void resetLevel() {
         PlayLayer::resetLevel();
-        g_tickFisico = 0;
-        g_inputDown[0] = g_inputDown[1] = false;
-        g_inputReleased[0] = g_inputReleased[1] = false;
+        AssistCore::g_currentTick = 0;
+        AssistCore::clearQueue();
     }
 
     void update(float dt) {
-        if (Mod::get()->getSettingValue<bool>("mostrar-trayectoria")) {
-            dibujarTrayectoria(this);
+        if (Mod::get()->getSettingValue<bool>("mostrar-trayectoria") && m_player1) {
+            // Dibujo de trayectoria
+            auto* drawNode = typeinfo_cast<cocos2d::CCDrawNode*>(this->getChildByID("trajectory-draw-node"));
+            if (!drawNode) {
+                drawNode = cocos2d::CCDrawNode::create();
+                drawNode->setID("trajectory-draw-node");
+                this->addChild(drawNode, 100);
+            }
+            drawNode->clear();
+            
+            float x = m_player1->getPositionX();
+            float y = m_player1->getPositionY();
+            float vx = 8.4f * m_player1->m_speedMultiplier;
+            float vy = m_player1->m_yVelocity;
+            
+             maxTicks = Mod::get()->getSettingValue<int6int            for (int i = 0; i < maxTicks; ++i) {
+                x += vx;
+                if (m_player1->m_isShip) vy += 0.4f;
+                else vy -= 0.958f; 
+                y += vy;
+                drawNode->drawDot({x, y}, 2.5f, cocos2d::ccc4f(1.0f, 0.2f, 0.2f, 0.5f));
+                if (y < 0) break;
+            }
         }
         PlayLayer::update(dt);
     }
@@ -493,8 +494,10 @@ class $modify(PauseLayerHook, PauseLayer) {
         PauseLayer::customSetup();
         auto* menu = getChildByID("right-button-menu");
         if (!menu) return;
-        auto* spr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-        auto* btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(PauseLayerHook::abrirPanel));
+        auto* btn = CCMenuItemSpriteExtra::create(
+            CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png"),
+            this, menu_selector(PauseLayerHook::abrirPanel)
+        );
         menu->addChild(btn);
     }
     void abrirPanel(CCObject*) { AssistPopup::create()->show(); }
