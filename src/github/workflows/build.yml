@@ -1,27 +1,20 @@
 name: Build Geode Mod
 
-on:
-  workflow_dispatch: # Permite ejecutarlo manualmente desde la pestaña Actions
-  push:
-    branches: [ "main" ] # Se ejecuta automáticamente al subir cambios a main
+on: [push, workflow_dispatch]
 
 jobs:
   build:
-    name: Build Android
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout del código
-        uses: actions/checkout@v4
-
-      - name: Compilar el mod
-        uses: geode-sdk/build-geode-mod@main
+      - uses: actions/checkout@v4
+      
+      - uses: geode-sdk/build-geode-mod@main
         id: build
         with:
-          target: Android64 # Cambia a Android32 si tu móvil es de 32 bits
-
-      - name: Subir el .geode como artefacto
-        uses: actions/upload-artifact@v4
+          target: Android64
+          sdk: 'given'  # <--- Esta es la línea mágica que soluciona el error
+          
+      - uses: actions/upload-artifact@v4
         with:
-          name: InputAssist-geode
+          name: Aftermobile-beta
           path: ${{ steps.build.outputs.build-output }}
