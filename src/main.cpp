@@ -1,153 +1,200 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/binding/GameObject.hpp>
+#include <cocos2d.h>
 
 using namespace geode::prelude;
 
 namespace {
     constexpr size_t kCapBuffer = 64;
-    struct Entrada { bool down; int button; bool isP1; uint32_t tick; };
-    Entrada g_buf[kCapBuffer]{};
-    size_t g_cabeza = 0, g_cola = 0;
+    
+    // Estructura para la cola de inputs sub-frame
+    struct InputEvent {
+        bool down;
+        int button;
+        bool isP1;
+        uint64_t tick;
+        double timestamp;
+    };
 
-    struct Metricas { float erroresMs[60]; uint32_t n, idx; float desfase; uint32_t corregidos, totales; };
-    Metricas g_metricas{};
+    InputEvent g_queue[kCapBuffer]{};
+    size_t g_head = 0, g_tail = 0;
 
-    uint32_t g_tickFisico = 0, g_toleranciaTicks = 7;
-    float g_targetHz = 60.f, g_altitudObjetivo = 0.f, g_waveAngulo = 0.f;
-    bool g_activo = false, g_altitudFijada = false;
+    uint64_t g_tickFisico = 0;
+    double g_currentTime = 0.0;
+    
+    // Variables para el anti-doble-click y hold inteligente
+    double g_lastDownTime[2] = {0.0, 0.0}; // P1, P2
+    bool g_pendingRelease[2] = {false, false};
+    double g_pendingReleaseTime[2] = {0.0, 0.0};
+    constexpr double kHoldDelay = 0.040; // 40ms de margen
+
+    bool g_activo = false;
     bool g_emitiendo = false;
 
-    inline bool bufferLleno() { return ((g_cabeza + 1) % kCapBuffer) == g_cola; }
-    inline bool bufferVacio() { return g_cabeza == g_cola; }
-    inline void limpiarBuffer() { g_cabeza = 0; g_cola = 0; }
+    inline bool queueLlena() { return ((g_head + 1) % kCapBuffer) == g_tail; }
+    inline bool queueVacia() { return g_head == g_tail; }
+    inline void limpiarQueue() { g_head = 0; g_tail = 0; }
 
-    inline void pushEntrada(bool down, int button, bool isP1) {
-        if (bufferLleno()) g_cola = (g_cola + 1) % kCapBuffer;
-        g_buf[g_cabeza] = Entrada{ down, button, isP1, g_tickFisico };
-        g_cabeza = (g_cabeza + 1) % kCapBuffer;
+    void pushEvent(bool down, int button, bool isP1) {
+        if (queueLlena()) g_tail = (g_tail + 1) % kCapBuffer;
+        g_queue[g_head] = InputEvent{ down, button, isP1, g_tickFisico, g_currentTime };
+        g_head = (g_head + 1) % kCapBuffer;
     }
 
-    inline void resetMetricas() { g_metricas = Metricas{}; }
-
-    inline uint32_t msATicks(float ms) {
-        float hz = g_targetHz > 1.f ? g_targetHz : 60.f;
-        uint32_t r = static_cast<uint32_t>((ms * hz) / 1000.f + 0.5f);
-        return r == 0 ? 1 : r;
-    }
-
-    void recalcularTolerancia() {
-        int ms = static_cast<int>(Mod::get()->getSettingValue<int64_t>("tolerancia-ms"));
-        g_toleranciaTicks = msATicks(static_cast<float>(ms));
-    }
-
-    void procesarBuffer() {
-        while (!bufferVacio()) {
-            const Entrada* e = &g_buf[g_cola];
-            int desfaseFrames = static_cast<int>(Mod::get()->getSettingValue<int64_t>("desfase-frames"));
-            if (Mod::get()->getSettingValue<bool>("modo-adaptativo")) {
-                desfaseFrames += static_cast<int>(g_metricas.desfase / (1000.f / g_targetHz));
-            }
-            int64_t tickObjetivo = static_cast<int64_t>(e->tick) + desfaseFrames;
-            if (tickObjetivo < 0) tickObjetivo = 0;
-            if (static_cast<uint32_t>(tickObjetivo) > g_tickFisico) break;
-
-            if (g_tickFisico - static_cast<uint32_t>(tickObjetivo) > g_toleranciaTicks) {
-                g_cola = (g_cola + 1) % kCapBuffer; continue;
-            }
-
-            // Log para debug (lo verás en la consola de Geode si lo activas)
-            log::debug("Emitiendo click: down={} button={}", e->down, e->button);
-
-            g_emitiendo = true;
-            if (PlayLayer::get()) {
-                // Llamamos a la funcion original del juego de forma segura
-                static_cast<GJBaseGameLayer*>(PlayLayer::get())->handleButton(e->down, e->button, e->isP1);
-            }
-            g_emitiendo = false;
-
-            ++g_metricas.totales;
-            if (tickObjetivo != static_cast<int64_t>(e->tick)) ++g_metricas.corregidos;
-            g_cola = (g_cola + 1) % kCapBuffer;
+    // --- Lógica de trayectoria y dibujo ---
+    void dibujarTrayectoria(PlayLayer* pl) {
+        if (!pl || !pl->m_player1) return;
+        
+        // Buscamos o creamos el nodo de dibujo
+        auto* drawNode = pl->getChildByID("trajectory-draw-node");
+        if (!drawNode) {
+            drawNode = cocos2d::CCDrawNode::create();
+            drawNode->setID("trajectory-draw-node");
+            pl->addChild(drawNode, 100);
         }
-    }
-
-    void aplicarWaveRecta() {
-        auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        if (!p1 || !p1->m_isDart || !g_activo || !bufferVacio()) return;
-        if (!Mod::get()->getSettingValue<bool>("wave-recta")) return;
         
-        constexpr float umbral = 0.05f;
-        g_emitiendo = true;
-        if (g_waveAngulo > umbral) PlayLayer::get()->handleButton(true, 1, true);
-        else if (g_waveAngulo < -umbral) PlayLayer::get()->handleButton(false, 1, true);
-        g_emitiendo = false;
-    }
+        drawNode->clear();
+        if (!Mod::get()->getSettingValue<bool>("mostrar-hud")) return; // Usamos el setting del HUD para encender/apagar
 
-    void aplicarVueloRecto() {
-        auto* p1 = PlayLayer::get() ? PlayLayer::get()->m_player1 : nullptr;
-        if (!p1 || (!p1->m_isShip && !p1->m_isBird) || !g_activo || !bufferVacio()) return;
-        if (!Mod::get()->getSettingValue<bool>("vuelo-recto")) return;
-
-        float yActual = p1->getPositionY();
-        if (!g_altitudFijada) { g_altitudObjetivo = yActual; g_altitudFijada = true; return; }
+        auto* p1 = pl->m_player1;
+        float x = p1->getPositionX();
+        float y = p1->getPositionY();
+        float vx = 8.4f; // Velocidad base horizontal
+        float vy = p1->m_yVelocity;
         
-        float error = g_altitudObjetivo - yActual;
-        float amort = static_cast<float>(Mod::get()->getSettingValue<double>("amortiguacion-vuelo"));
-        float umbral = 5.f * (1.f - amort) + 2.f;
+        bool isShip = p1->m_isShip;
+        bool isBird = p1->m_isBird;
+        
+        // Simulamos 30 ticks de física hacia adelante
+        for (int i = 0; i < 30; ++i) {
+            x += vx;
+            if (isShip) {
+                vy += 0.4f; // Simulación simplificada de gravedad de nave
+            } else if (isBird) {
+                vy -= 0.958f;
+            } else {
+                vy -= 0.958f; // Gravedad normal
+            }
+            y += vy;
 
-        g_emitiendo = true;
-        if (error > umbral) PlayLayer::get()->handleButton(true, 1, true);
-        else if (error < -umbral) PlayLayer::get()->handleButton(false, 1, true);
-        g_emitiendo = false;
+            // Dibujamos un punto en la trayectoria
+            drawNode->drawDot({x, y}, 3.0f, cocos2d::ccc4f(1.0f, 0.2f, 0.2f, 0.6f));
+            
+            // Si cae de la pantalla, paramos
+            if (y < 0) break;
+        }
     }
 }
 
-// Movemos la logica del reloj a GJBaseGameLayer que es el verdadero motor del juego
 class $modify(InputAssistBase, GJBaseGameLayer) {
     void update(float dt) {
+        g_currentTime += dt;
+
         if (g_activo) {
             ++g_tickFisico;
-            if (m_player1 && m_player1->m_isDart) g_waveAngulo = m_player1->m_yVelocity / 8.4f;
-            procesarBuffer();
-            aplicarWaveRecta();
-            aplicarVueloRecto();
+
+            // 1. Procesar la cola de inputs
+            while (!queueVacia()) {
+                InputEvent* e = &g_queue[g_tail];
+                
+                // Si el tick ya pasó o es el actual
+                if (e->tick <= g_tickFisico) {
+                    // Aplicar anti-doble-click
+                    if (e->down) {
+                        if (g_currentTime - g_lastDownTime[e->isP1] < 0.030) { // 30ms
+                            // Es un doble click accidental, lo ignoramos
+                            g_tail = (g_tail + 1) % kCapBuffer;
+                            continue; 
+                        }
+                        g_lastDownTime[e->isP1] = g_currentTime;
+                        g_pendingRelease[e->isP1] = false; // Cancelar release pendiente
+                    }
+
+                    g_emitiendo = true;
+                    GJBaseGameLayer::handleButton(e->down, e->button, e->isP1);
+                    g_emitiendo = false;
+                    
+                    g_tail = (g_tail + 1) % kCapBuffer;
+                } else {
+                    break; // Aún no es el tick
+                }
+            }
+
+            // 2. Procesar releases pendientes (Hold inteligente)
+            for (int p = 0; p < 2; ++p) {
+                if (g_pendingRelease[p]) {
+                    if (g_currentTime >= g_pendingReleaseTime[p]) {
+                        g_emitiendo = true;
+                        GJBaseGameLayer::handleButton(false, 1, p == 0);
+                        g_emitiendo = false;
+                        g_pendingRelease[p] = false;
+                    }
+                }
+            }
         }
+
         GJBaseGameLayer::update(dt);
     }
 
     void handleButton(bool down, int button, bool isPlayer1) {
-        if (!g_activo || g_emitiendo) { 
-            GJBaseGameLayer::handleButton(down, button, isPlayer1); 
-            return; 
+        if (!g_activo || g_emitiendo) {
+            GJBaseGameLayer::handleButton(down, button, isPlayer1);
+            return;
         }
-        pushEntrada(down, button, isPlayer1);
+
+        // Si estamos soltando el botón, no lo mandamos directo, lo agendamos
+        // para ver si el jugador vuelve a pulsar rápido (spam).
+        if (!down) {
+            int p = isPlayer1 ? 0 : 1;
+            g_pendingRelease[p] = true;
+            g_pendingReleaseTime[p] = g_currentTime + kHoldDelay;
+            // Lo guardamos en la cola pero marcado para el futuro
+            pushEvent(down, button, isPlayer1);
+        } else {
+            pushEvent(down, button, isPlayer1);
+        }
     }
 };
 
 class $modify(InputAssistPlay, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+        
         std::string modo = Mod::get()->getSettingValue<std::string>("modo-asistencia");
         g_activo = (modo != "desactivado");
+        
         if (g_activo) {
-            g_targetHz = 60.f; 
-            recalcularTolerancia(); limpiarBuffer(); resetMetricas();
-            g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
+            g_tickFisico = 0;
+            g_currentTime = 0.0;
+            limpiarQueue();
+            g_pendingRelease[0] = g_pendingRelease[1] = false;
+            g_lastDownTime[0] = g_lastDownTime[1] = -1.0;
         }
         return true;
     }
 
     void resetLevel() {
-        PlayLayer::resetLevel(); limpiarBuffer(); g_tickFisico = 0; g_altitudFijada = false; g_waveAngulo = 0.f;
+        PlayLayer::resetLevel();
+        g_tickFisico = 0;
+        g_currentTime = 0.0;
+        limpiarQueue();
+        g_pendingRelease[0] = g_pendingRelease[1] = false;
+    }
+
+    void update(float dt) {
+        // Dibujamos la trayectoria en cada frame
+        if (g_activo) {
+            dibujarTrayectoria(this);
+        }
+        PlayLayer::update(dt);
     }
 };
 
 $on_mod(Loaded) {
-    listenForSettingChanges<int64_t>("tolerancia-ms", [](int64_t) { recalcularTolerancia(); });
     listenForSettingChanges<std::string>("modo-asistencia", [](std::string modo) {
         g_activo = (modo != "desactivado");
-        if (!g_activo) limpiarBuffer();
+        if (!g_activo) limpiarQueue();
     });
 }
