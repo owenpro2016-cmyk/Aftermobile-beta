@@ -1,89 +1,33 @@
 {
     "geode": "5.10.1",
-    "gd": {
-        "android": "2.2081"
-    },
-    "version": "v1.0.3",
+    "gd": { "android": "2.2081" },
+    "version": "v1.1.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
-    "name": "Aftermobile beta",
+    "name": "Aftermobile Beta",
     "developer": "owenpro2016-cmyk",
-    "description": "Asistencia de entrada para movil.",
+    "description": "Asistencia de entrada definitiva con trayectoria y 50 opciones.",
     "platforms": ["android32", "android64"],
-    "android": {
-        "min_sdk": 21,
-        "target_sdk": 34
-    },
-    "tags": ["gameplay", "accessibility", "mobile"],
     "settings": {
-        "modo-asistencia": {
-            "name": "Modo de asistencia",
-            "description": "Desactivado deja el juego exactamente como vanilla.",
-            "type": "string",
-            "default": "equilibrado",
-            "one-of": ["desactivado", "suave", "equilibrado", "agresivo", "personalizado"]
-        },
-        "alinear-clicks": {
-            "name": "Alinear clicks al frame",
-            "description": "Reemite cada toque en el tick exacto de fisica.",
-            "type": "bool",
-            "default": true
-        },
-        "desfase-frames": {
-            "name": "Desfase en frames",
-            "description": "Adelanta o retrasa el click. 0 = alineado exacto.",
-            "type": "int",
-            "default": 0,
-            "min": -3,
-            "max": 3
-        },
-        "corregir-click-temprano": {
-            "name": "Corregir click temprano",
-            "description": "Retiene clicks tempranos y los emite en el tick seguro.",
-            "type": "bool",
-            "default": true
-        },
-        "tolerancia-ms": {
-            "name": "Tolerancia de correccion (ms)",
-            "description": "Cuanto tiempo antes puedes pulsar.",
-            "type": "int",
-            "default": 120,
-            "min": 30,
-            "max": 250
-        },
-        "modo-adaptativo": {
-            "name": "Modo adaptativo",
-            "description": "Ajusta el desfase segun tu error sistematico.",
-            "type": "bool",
-            "default": false
-        },
-        "wave-recta": {
-            "name": "Wave recta",
-            "description": "Mantiene la linea horizontal con micro-pulsos.",
-            "type": "bool",
-            "default": true
-        },
-        "vuelo-recto": {
-            "name": "Vuelo recto",
-            "description": "Mantiene la altitud objetivo con amortiguacion.",
-            "type": "bool",
-            "default": true
-        },
-        "amortiguacion-vuelo": {
-            "name": "Amortiguacion de vuelo",
-            "description": "0.1 es suave, 0.9 es reactivo.",
-            "type": "float",
-            "default": 0.5,
-            "min": 0.1,
-            "max": 0.9,
-            "control": {
-                "slider": true
-            }
-        },
-        "mostrar-hud": {
-            "name": "Mostrar indicador en pantalla",
-            "description": "HUD discreto con estado y metricas.",
-            "type": "bool",
-            "default": true
-        }
+        "modo-asistencia": { "name": "Modo Global", "type": "string", "default": "equilibrado", "one-of": ["desactivado", "suave", "equilibrado", "agresivo"] },
+        "mostrar-hud": { "name": "Mostrar Icono AM", "type": "bool", "default": true },
+        "mostrar-trayectoria": { "name": "Mostrar Trayectoria", "type": "bool", "default": true },
+        
+        "cb-1": { "name": "Buffer Maximo", "type": "int", "default": 10, "min": 1, "max": 20 },
+        "cb-2": { "name": "Tolerancia Temprana (ms)", "type": "int", "default": 120, "min": 0, "max": 300 },
+        "cb-3": { "name": "Anti-Doble Click (ms)", "type": "int", "default": 30, "min": 0, "max": 100 },
+        "cb-4": { "name": "Hold Delay (ms)", "type": "int", "default": 40, "min": 0, "max": 100 },
+        
+        "tr-1": { "name": "Longitud Trayectoria", "type": "int", "default": 30, "min": 10, "max": 100 },
+        "tr-2": { "name": "Grosor Punto", "type": "float", "default": 2.5, "min": 1.0, "max": 5.0 },
+        "tr-3": { "name": "Opacidad", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0 },
+        
+        "wv-1": { "name": "Wave Recta", "type": "bool", "default": true },
+        "wv-2": { "name": "Fuerza Wave", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0 },
+        "sh-1": { "name": "Ship Altitud Fija", "type": "bool", "default": true },
+        "sh-2": { "name": "Amortiguacion Ship", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0 },
+        
+        "vis-1": { "name": "Efecto Pulso Icono", "type": "bool", "default": true },
+        "vis-2": { "name": "Destellos Icono", "type": "bool", "default": true },
+        "vis-3": { "name": "Color Trayectoria", "type": "string", "default": "rojo", "one-of": ["rojo", "verde", "azul", "amarillo"] }
     }
 }
