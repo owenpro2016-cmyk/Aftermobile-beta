@@ -4,43 +4,119 @@
         "android": "2.2081",
         "win": "2.2081"
     },
-    "version": "v12.0.1",
+    "version": "v16.0.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
-    "name": "Aftermobile Pro",
+    "name": "Aftermobile Ultimate",
     "developer": "owenpro2016-cmyk",
-    "description": "Motor definitivo: CAF, Buffer Predictivo y Memoria de Nivel.",
+    "description": "La suite de asistencia definitiva. Fusion de CAF, TickSaver, Nova y Afterflow.",
     "platforms": ["android32", "android64", "win"],
     "settings": {
+        "core-title": {
+            "type": "title",
+            "name": "1. Motor de Tiempo y Buffer"
+        },
         "assist-mode": { 
             "type": "string", 
-            "name": "Modo de Asistencia", 
+            "name": "Modo Global", 
+            "description": "Nivel de asistencia general.",
             "default": "Balanceado",
-            "one-of": ["Desactivado", "Suave", "Balanceado", "Extremo"]
+            "one-of": ["Desactivado", "Suave", "Balanceado", "Extremo", "Personalizado"]
         },
         "caf-enabled": { 
             "type": "bool", 
-            "name": "Click After Frames (CAF)", 
+            "name": "Activar CAF (Click After Frames)", 
+            "description": "Si haces clic tarde, viaja en el tiempo al frame anterior para salvarte.",
             "default": true 
         },
-        "ui-primary-color": { 
-            "type": "color", 
-            "name": "Color Principal", 
-            "default": "#00FF00" 
+        "caf-max-rewind": { 
+            "type": "int", 
+            "name": "CAF: Limite de Rewind (Ticks)", 
+            "description": "Cuantos frames atras puede viajar para salvarte.",
+            "default": 2,
+            "min": 1,
+            "max": 5
+        },
+
+        "ticks-title": {
+            "type": "title",
+            "name": "2. Ticks por Vehiculo (Modo Personalizado)"
+        },
+        "ticks-cube": { "type": "int", "name": "Cubo (Ticks)", "default": 12, "min": 0, "max": 40 },
+        "ticks-ship": { "type": "int", "name": "Nave (Ticks)", "default": 4, "min": 0, "max": 20 },
+        "ticks-wave": { "type": "int", "name": "Wave (Ticks)", "default": 4, "min": 0, "max": 20 },
+        "ticks-ufo": { "type": "int", "name": "UFO (Ticks)", "default": 12, "min": 0, "max": 40 },
+        "ticks-ball": { "type": "int", "name": "Ball (Ticks)", "default": 12, "min": 0, "max": 40 },
+        "ticks-spider": { "type": "int", "name": "Spider (Ticks)", "default": 12, "min": 0, "max": 40 },
+
+        "predict-title": {
+            "type": "title",
+            "name": "3. Prediccion Inteligente"
+        },
+        "smart-orbs": { 
+            "type": "bool", 
+            "name": "Predecir Orbes y Pads", 
+            "description": "La trayectoria tiene en cuenta los orbes para saber si el salto es seguro.",
+            "default": true 
+        },
+        "ignore-touching": { 
+            "type": "bool", 
+            "name": "Ignorar Hitboxes Pegadas", 
+            "description": "Evita que el mod crea que moriras por objetos que ya estas tocando.",
+            "default": true 
+        },
+
+        "ui-title": {
+            "type": "title",
+            "name": "4. Interfaz Visual"
         },
         "show-hud": { 
             "type": "bool", 
             "name": "Mostrar Bolita AM", 
             "default": true 
         },
-        "show-hitboxes": { 
-            "type": "bool", 
-            "name": "Mostrar Hitboxes", 
-            "default": false 
+        "hud-x": { 
+            "type": "float", 
+            "name": "HUD: Posicion X", 
+            "description": "Posicion horizontal de la bolita.",
+            "default": 50.0, "min": 0.0, "max": 1000.0
+        },
+        "hud-y": { 
+            "type": "float", 
+            "name": "HUD: Posicion Y", 
+            "description": "Posicion vertical de la bolita.",
+            "default": 500.0, "min": 0.0, "max": 1000.0
+        },
+        "ui-primary-color": { 
+            "type": "color", 
+            "name": "Color Principal (Neon)", 
+            "default": "#00FF00" 
         },
         "show-traj": { 
             "type": "bool", 
-            "name": "Mostrar Trayectoria", 
+            "name": "Mostrar Trayectoria Predictiva", 
             "default": true 
+        },
+        "traj-length": { 
+            "type": "int", 
+            "name": "Longitud de Trayectoria", 
+            "default": 30, "min": 10, "max": 100
+        },
+
+        "extra-title": {
+            "type": "title",
+            "name": "5. Asistencias Extra"
+        },
+        "straight-fly": { 
+            "type": "bool", 
+            "name": "Straight Fly (Nave Recta)", 
+            "description": "Mantiene la altitud de la nave con pulsaciones automaticas perfectas.",
+            "default": false 
+        },
+        "wave-equalizer": { 
+            "type": "bool", 
+            "name": "Ecualizador de Spam (Wave)", 
+            "description": "Absorbe los micro-sueltes en la Wave para mantenerla recta.",
+            "default": false 
         }
     }
 }
