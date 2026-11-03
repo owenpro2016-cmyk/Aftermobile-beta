@@ -40,24 +40,22 @@ namespace AfterEngine {
     size_t g_hbCount = 0;
     
     std::deque<Snapshot> g_history;
-    std::map<uint64_t, int> g_levelMemory; // Guarda el delay exitoso por posicion
+    std::map<uint64_t, int> g_levelMemory; 
     
     uint64_t g_currentTick = 0;
     bool g_holding[2] = {false, false};
     bool g_bufferedJump[2] = {false, false};
     uint64_t g_jumpStartTick[2] = {0, 0};
 
-    // Obtener el limite de ticks segun el modo
     int getMaxTicks(PlayerObject* p) {
         std::string mode = Mod::get()->getSettingValue<std::string>("assist-mode");
         if (mode == "Desactivado") return 0;
         bool isWave = p->m_isDart;
         if (mode == "Suave") return isWave ? 2 : 6;
         if (mode == "Balanceado") return isWave ? 4 : 12;
-        return isWave ? 8 : 24; // Extremo
+        return isWave ? 8 : 24; 
     }
 
-    // Escanear objetos cercanos
     void updateHitboxes(PlayLayer* pl, PlayerObject* p) {
         g_hbCount = 0;
         if (!pl || !p || !pl->m_objects) return;
@@ -78,7 +76,6 @@ namespace AfterEngine {
         }
     }
 
-    // Predecir si el salto es seguro desde una posicion dada
     bool isSafe(float startX, float startY, PlayerObject* p) {
         float vX = 8.4f * (p->m_speedMultiplier > 0 ? p->m_speedMultiplier : 1.0f);
         float vY = JUMP_VELOCITY;
@@ -89,7 +86,6 @@ namespace AfterEngine {
             
             for (size_t i = 0; i < g_hbCount; i++) {
                 auto& hb = g_hitboxes[i];
-                // Hitbox ajustada (margen de 2px para simular a GD)
                 if (nx + PLAYER_SIZE/2 - 2 > hb.minX && nx - PLAYER_SIZE/2 + 2 < hb.maxX && 
                     ny + PLAYER_SIZE/2 - 2 > hb.minY && ny - PLAYER_SIZE/2 + 2 < hb.maxY) {
                     return false;
@@ -100,7 +96,6 @@ namespace AfterEngine {
         return true;
     }
 
-    // Viaje en el tiempo para clicks tardios
     void tryRewind(PlayerObject* p) {
         if (!Mod::get()->getSettingValue<bool>("caf-enabled") || g_history.empty()) return;
         int maxRw = std::min((int)g_history.size(), 5);
@@ -135,8 +130,8 @@ public:
         auto col = Mod::get()->getSettingValue<cocos2d::ccColor3B>("ui-primary-color");
         
         auto* circle = cocos2d::CCDrawNode::create();
+        // drawCircle usa ccc4f, asi que esta bien
         circle->drawCircle({0, 0}, 22.f, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 0.9f), 2.f, cocos2d::ccc4f(col.r/255.f, col.g/255.f, col.b/255.f, 1.f), 32);
-        circle->setID("am-circle");
         this->addChild(circle);
         
         auto* label = cocos2d::CCLabelBMFont::create("am", "bigFont.fnt");
@@ -151,20 +146,6 @@ public:
         return true;
     }
 
-    void pulse() {
-        auto circle = typeinfo_cast<cocos2d::CCDrawNode*>(this->getChildByID("am-circle"));
-        if (!circle) return;
-        auto col = Mod::get()->getSettingValue<cocos2d::ccColor3B>("ui-primary-color");
-        
-        circle->setColor(cocos2d::ccc4f(1, 1, 1, 1)); // Flash blanco
-        circle->runAction(cocos2d::CCSequence::create(
-            cocos2d::CCDelayTime::create(0.1f),
-            cocos2d::CCCallFunc::create([circle, col]() {
-                circle->setColor(cocos2d::ccc4f(col.r/255.f, col.g/255.f, col.b/255.f, 1.f));
-            }), nullptr
-        ));
-    }
-
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override { 
         return this->convertTouchToNodeSpace(touch).getLengthSq() < 400.f; 
     }
@@ -177,7 +158,7 @@ public:
 };
 
 class AfterPanel : public geode::Popup {
-public:
+public: // IMPORTANTE: public para que funcionen los botones
     static AfterPanel* create() {
         auto* ret = new AfterPanel(); 
         if (ret->init(280.f, 200.f)) { ret->autorelease(); return ret; } 
@@ -185,7 +166,7 @@ public:
     }
 
     bool init(float w, float h) {
-        if (!Popup::init(w, h)) return false;
+        if (!Popup::init(w, h)) return false; // Inicializa m_mainLayer
         setTitle("Aftermobile Control");
         
         auto* menu = CCMenu::create(); 
@@ -241,9 +222,9 @@ class $modify(PlayerHook, PlayerObject) {
         
         if (this->m_isOnGround) {
             if (Mod::get()->getSettingValue<std::string>("assist-mode") == "Desactivado") {
-                AfterEngine::tryRewind(this); // CAF
+                AfterEngine::tryRewind(this);
             } else {
-                AfterEngine::g_bufferedJump[p] = true; // Buffer
+                AfterEngine::g_bufferedJump[p] = true;
                 AfterEngine::g_jumpStartTick[p] = AfterEngine::g_currentTick;
             }
         } else {
@@ -270,11 +251,19 @@ class $modify(BaseHook, GJBaseGameLayer) {
         auto* pl = PlayLayer::get();
         if (!pl || !pl->m_player1) { GJBaseGameLayer::update(dt); return; }
 
-        // Guardar historial para CAF
-        AfterEngine::g_history.push_back({ pl->m_player1->getPositionX(), pl->m_player1->getPositionY(), pl->m_player1->m_yVelocity, pl->m_player1->m_isOnGround, AfterEngine::g_currentTick });
-        if (AfterEngine::g_history.size() > AfterEngine::MAX_HISTORY) AfterEngine::g_history.pop_front();
+        // Arreglado: Casteo a float en el push_back
+        AfterEngine::g_history.push_back({ 
+            (float)pl->m_player1->getPositionX(), 
+            (float)pl->m_player1->getPositionY(), 
+            (float)pl->m_player1->m_yVelocity, 
+            pl->m_player1->m_isOnGround, 
+            AfterEngine::g_currentTick 
+        });
+        
+        if (AfterEngine::g_history.size() > AfterEngine::MAX_HISTORY) {
+            AfterEngine::g_history.pop_front();
+        }
 
-        // Procesar el buffer
         if (Mod::get()->getSettingValue<std::string>("assist-mode") != "Desactivado") {
             AfterEngine::updateHitboxes(pl, pl->m_player1);
             
@@ -342,7 +331,6 @@ class $modify(PlayHook, PlayLayer) {
         }
         drawNode->clear();
 
-        // Hitboxes
         if (Mod::get()->getSettingValue<bool>("show-hitboxes")) {
             for (size_t i = 0; i < AfterEngine::g_hbCount; i++) {
                 auto& hb = AfterEngine::g_hitboxes[i];
@@ -351,7 +339,6 @@ class $modify(PlayHook, PlayLayer) {
             }
         }
 
-        // Trayectoria
         if (Mod::get()->getSettingValue<bool>("show-traj")) {
             float px = m_player1->getPositionX(), py = m_player1->getPositionY();
             float vx = 8.4f * m_player1->m_speedMultiplier, vy = AfterEngine::JUMP_VELOCITY;
@@ -360,7 +347,7 @@ class $modify(PlayHook, PlayLayer) {
             auto col = Mod::get()->getSettingValue<cocos2d::ccColor3B>("ui-primary-color");
             cocos2d::ccColor4F c = safe ? 
                 cocos2d::ccc4f(col.r/255.f, col.g/255.f, col.b/255.f, 0.6f) : 
-                cocos2d::ccc4f(1, 0, 0, 0.6f); // Rojo si es peligroso
+                cocos2d::ccc4f(1, 0, 0, 0.6f); 
 
             for (int i = 1; i <= 25; ++i) {
                 drawNode->drawDot({px + (vx * i), py + (vy * i) - (0.5f * AfterEngine::GRAVITY * i * i)}, 2.5f, c);
