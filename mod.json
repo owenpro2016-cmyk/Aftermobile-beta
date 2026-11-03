@@ -1,7 +1,7 @@
 {
     "geode": "5.11.2",
     "gd": { "android": "2.2081", "win": "2.2081" },
-    "version": "v11.0.0",
+    "version": "v11.1.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile Pro",
     "developer": "owenpro2016-cmyk",
@@ -16,7 +16,6 @@
             "one-of": ["Desactivado", "Suave", "Balanceado", "Extremo"]
         },
         "caf-enabled": { "type": "bool", "name": "Click After Frames (CAF)", "default": true },
-        "level-memory": { "type": "bool", "name": "Memoria de Nivel", "default": true },
         
         "ui-title": { "type": "title", "name": "Interfaz Visual" },
         "ui-primary-color": { "type": "color", "name": "Color Principal", "default": "#00FF00" },
