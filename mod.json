@@ -1,17 +1,20 @@
 {
     "geode": "5.10.1",
     "gd": { "android": "2.2081" },
-    "version": "v1.4.0",
+    "version": "v1.5.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile Beta",
     "developer": "owenpro2016-cmyk",
-    "description": "Buffer de entrada perfecto y asistencia TAS.",
+    "description": "Input Buffer (Ticksaver) y Trayectoria con HUD en menu.",
     "platforms": ["android32", "android64"],
     "settings": {
         "modo-asistencia": { "name": "Modo Global", "type": "string", "default": "equilibrado", "one-of": ["desactivado", "equilibrado"] },
+        "mostrar-hud": { "name": "Mostrar Icono AM", "type": "bool", "default": true },
         "mostrar-trayectoria": { "name": "Mostrar Trayectoria", "type": "bool", "default": true },
-        "buffer-perfecto": { "name": "Buffer Perfecto (TAS Disimulado)", "type": "bool", "default": true },
-        "tolerancia-clicks": { "name": "Ventana de Retencion (Ticks)", "type": "int", "default": 12, "min": 1, "max": 30 },
-        "tr-1": { "name": "Longitud Trayectoria", "type": "int", "default": 30, "min": 10, "max": 100 }
+        "buffer-perfecto": { "name": "Input Buffer (Ticksaver)", "type": "bool", "default": true },
+        "tolerancia-buffer": { "name": "Retencion Maxima (Ticks)", "type": "int", "default": 10, "min": 1, "max": 30 },
+        "tr-1": { "name": "Longitud Trayectoria", "type": "int", "default": 30, "min": 10, "max": 100 },
+        "tr-2": { "name": "Grosor Punto", "type": "float", "default": 2.5, "min": 1.0, "max": 5.0 },
+        "vis-1": { "name": "Color Trayectoria", "type": "string", "default": "rojo", "one-of": ["rojo", "verde", "azul", "amarillo"] }
     }
 }
