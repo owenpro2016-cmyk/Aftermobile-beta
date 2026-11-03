@@ -1,30 +1,17 @@
 {
     "geode": "5.10.1",
     "gd": { "android": "2.2081" },
-    "version": "v1.2.0",
+    "version": "v1.4.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile Beta",
     "developer": "owenpro2016-cmyk",
-    "description": "Asistencia de entrada definitiva con trayectoria y prediccion de colisiones.",
+    "description": "Buffer de entrada perfecto y asistencia TAS.",
     "platforms": ["android32", "android64"],
     "settings": {
-        "modo-asistencia": { "name": "Modo Global", "type": "string", "default": "equilibrado", "one-of": ["desactivado", "suave", "equilibrado", "agresivo"] },
-        "mostrar-hud": { "name": "Mostrar Icono AM", "type": "bool", "default": true },
+        "modo-asistencia": { "name": "Modo Global", "type": "string", "default": "equilibrado", "one-of": ["desactivado", "equilibrado"] },
         "mostrar-trayectoria": { "name": "Mostrar Trayectoria", "type": "bool", "default": true },
-        "trayectoria-segura": { "name": "Trayectoria Segura (Evitar choques)", "type": "bool", "default": true },
-        
-        "cb-1": { "name": "Buffer Maximo (Ticks)", "type": "int", "default": 15, "min": 1, "max": 30 },
-        "cb-2": { "name": "Tolerancia Temprana (Ticks)", "type": "int", "default": 7, "min": 0, "max": 15 },
-        
-        "tr-1": { "name": "Longitud Trayectoria (Ticks)", "type": "int", "default": 30, "min": 10, "max": 100 },
-        "tr-2": { "name": "Grosor Punto", "type": "float", "default": 2.5, "min": 1.0, "max": 5.0 },
-        "tr-3": { "name": "Opacidad", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0 },
-        
-        "wv-1": { "name": "Wave Recta", "type": "bool", "default": true },
-        "sh-1": { "name": "Ship Altitud Fija", "type": "bool", "default": true },
-        
-        "vis-1": { "name": "Efecto Pulso Icono", "type": "bool", "default": true },
-        "vis-2": { "name": "Destellos Icono", "type": "bool", "default": true },
-        "vis-3": { "name": "Color Trayectoria", "type": "string", "default": "rojo", "one-of": ["rojo", "verde", "azul", "amarillo"] }
+        "buffer-perfecto": { "name": "Buffer Perfecto (TAS Disimulado)", "type": "bool", "default": true },
+        "tolerancia-clicks": { "name": "Ventana de Retencion (Ticks)", "type": "int", "default": 12, "min": 1, "max": 30 },
+        "tr-1": { "name": "Longitud Trayectoria", "type": "int", "default": 30, "min": 10, "max": 100 }
     }
 }
