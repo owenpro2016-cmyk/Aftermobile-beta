@@ -1,36 +1,28 @@
 {
     "geode": "5.11.2",
     "gd": { "android": "2.2081", "win": "2.2081" },
-    "version": "v9.0.0",
+    "version": "v11.0.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
-    "name": "Aftermobile Ultimate",
+    "name": "Aftermobile Pro",
     "developer": "owenpro2016-cmyk",
-    "description": "El motor definitivo de asistencia predictiva con CAF, Orbes y Memoria de Nivel.",
+    "description": "Motor definitivo: CAF, Buffer Predictivo y Memoria de Nivel.",
     "platforms": ["android32", "android64", "win"],
     "settings": {
-        "core-title": { "type": "title", "name": "Motor de Tiempo" },
-        "assist-mode": {
-            "type": "string",
-            "name": "Modo de Asistencia",
+        "core-title": { "type": "title", "name": "Motor de Asistencia" },
+        "assist-mode": { 
+            "type": "string", 
+            "name": "Modo de Asistencia", 
             "default": "Balanceado",
-            "one-of": ["Desactivado", "Suave", "Balanceado", "Extremo", "Custom"]
+            "one-of": ["Desactivado", "Suave", "Balanceado", "Extremo"]
         },
-        "custom-ticks": { "type": "int", "name": "Custom: Max Delay (Ticks)", "default": 24, "min": 1, "max": 64 },
-        "custom-wave-ticks": { "type": "int", "name": "Custom: Max Wave Delay (Ticks)", "default": 12, "min": 0, "max": 64 },
-        "caf-enabled": { "type": "bool", "name": "Click After Frames (Viaje en el Tiempo)", "default": true },
-        "caf-max-rewind": { "type": "int", "name": "CAF: Maximo Rewind (Ticks)", "default": 2, "min": 1, "max": 5 },
+        "caf-enabled": { "type": "bool", "name": "Click After Frames (CAF)", "default": true },
+        "level-memory": { "type": "bool", "name": "Memoria de Nivel", "default": true },
         
-        "features-title": { "type": "title", "name": "Features Avanzadas" },
-        "smart-prediction": { "type": "bool", "name": "Prediccion de Orbes, Pads y Portales", "default": true },
-        "orb-align": { "type": "bool", "name": "Alinear Orbes (Magnetismo)", "default": true },
-        "level-memory": { "type": "bool", "name": "Memoria de Nivel (Aprende de tus muertes)", "default": true },
-        "spam-guard": { "type": "bool", "name": "Spam Guard (Evitar lag en spam)", "default": true },
-        
-        "ui-title": { "type": "title", "name": "Interfaz" },
+        "ui-title": { "type": "title", "name": "Interfaz Visual" },
         "ui-primary-color": { "type": "color", "name": "Color Principal", "default": "#00FF00" },
         "ui-surface-color": { "type": "color", "name": "Color de Fondo", "default": "#16161A" },
         "show-hud": { "type": "bool", "name": "Mostrar Bolita AM", "default": true },
         "show-hitboxes": { "type": "bool", "name": "Mostrar Hitboxes", "default": false },
-        "show-prediction": { "type": "bool", "name": "Mostrar Trayectoria", "default": true }
+        "show-traj": { "type": "bool", "name": "Mostrar Trayectoria", "default": true }
     }
 }
