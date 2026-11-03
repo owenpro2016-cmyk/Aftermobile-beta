@@ -1,20 +1,33 @@
 {
-    "geode": "5.10.1",
-    "gd": { "android": "2.2081" },
-    "version": "v1.5.0",
+    "geode": "5.11.2",
+    "gd": { "android": "2.2081", "win": "2.2081" },
+    "version": "v6.0.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
-    "name": "Aftermobile Beta",
+    "name": "Aftermobile Prime",
     "developer": "owenpro2016-cmyk",
-    "description": "Input Buffer (Ticksaver) y Trayectoria con HUD en menu.",
-    "platforms": ["android32", "android64"],
+    "description": "Suite definitiva de asistencia: Fisica predictiva, buffer de inputs, portales, replay y UI personalizable.",
+    "platforms": ["android32", "android64", "win"],
     "settings": {
-        "modo-asistencia": { "name": "Modo Global", "type": "string", "default": "equilibrado", "one-of": ["desactivado", "equilibrado"] },
-        "mostrar-hud": { "name": "Mostrar Icono AM", "type": "bool", "default": true },
-        "mostrar-trayectoria": { "name": "Mostrar Trayectoria", "type": "bool", "default": true },
-        "buffer-perfecto": { "name": "Input Buffer (Ticksaver)", "type": "bool", "default": true },
-        "tolerancia-buffer": { "name": "Retencion Maxima (Ticks)", "type": "int", "default": 10, "min": 1, "max": 30 },
-        "tr-1": { "name": "Longitud Trayectoria", "type": "int", "default": 30, "min": 10, "max": 100 },
-        "tr-2": { "name": "Grosor Punto", "type": "float", "default": 2.5, "min": 1.0, "max": 5.0 },
-        "vis-1": { "name": "Color Trayectoria", "type": "string", "default": "rojo", "one-of": ["rojo", "verde", "azul", "amarillo"] }
+        "core-title": { "type": "title", "name": "Motor AeroEngine" },
+        "assist-stage": {
+            "type": "string",
+            "name": "Nivel de Asistencia",
+            "description": "Controla cuantos ticks puede retener el mod tus clicks para salvarte.",
+            "default": "Balanceado",
+            "one-of": ["Desactivado", "Suave (1 Tk)", "Balanceado (3 Tk)", "Extremo (8 Tk)"]
+        },
+        "predict-portals": { "type": "bool", "name": "Predecir a traves de Portales", "default": true },
+        "absorb-releases": { "type": "bool", "name": "Absorber Micro-Sueltes (Nave/Wave)", "default": true },
+        
+        "tools-title": { "type": "title", "name": "Herramientas" },
+        "show-hitboxes": { "type": "bool", "name": "Mostrar Hitboxes", "default": false },
+        "show-prediction": { "type": "bool", "name": "Mostrar Trayectoria Predictiva", "default": true },
+        "enable-replay": { "type": "bool", "name": "Grabar y Reproducir Inputs", "default": false },
+        
+        "ui-title": { "type": "title", "name": "Interfaz Visual" },
+        "ui-primary-color": { "type": "color", "name": "Color Principal", "default": "#00FF00" },
+        "ui-surface-color": { "type": "color", "name": "Color de Fondo", "default": "#16161A" },
+        "ui-glow": { "type": "bool", "name": "Efecto de Brillo", "default": true },
+        "show-hud": { "type": "bool", "name": "Mostrar Bolita AM", "default": true }
     }
 }
