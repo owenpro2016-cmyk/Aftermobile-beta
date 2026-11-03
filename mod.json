@@ -1,10 +1,10 @@
 {
-    "geode": "v5.11.2",
+    "geode": "5.11.2",
     "gd": {
         "android": "2.2081",
         "win": "2.2081"
     },
-    "version": "v12.0.0",
+    "version": "v12.0.1",
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile Pro",
     "developer": "owenpro2016-cmyk",
