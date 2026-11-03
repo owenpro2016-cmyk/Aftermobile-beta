@@ -1,9 +1,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/PauseLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
-#include <Geode/ui/OverlayManager.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/ScrollLayer.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -80,7 +79,7 @@ namespace Ticksaver {
 }
 
 // =====================================================================================
-// 2. INTERFAZ GRÁFICA: HUD Y MENÚ
+// 2. INTERFAZ GRÁFICA: HUD (Bolita pequeña)
 // =====================================================================================
 
 class AssistHUD : public cocos2d::CCLayer {
@@ -94,13 +93,13 @@ public:
     bool init() override {
         if (!CCLayer::init()) return false;
 
-        // La bolita ahora es más pequeña (radio 18 en vez de 28)
+        // Bolita pequeña (radio 18)
         auto* circle = cocos2d::CCDrawNode::create();
         circle->drawCircle({0, 0}, 18.f, cocos2d::ccc4f(0.1f, 0.1f, 0.1f, 0.9f), 2.f, cocos2d::ccc4f(0.f, 1.f, 0.f, 1.f), 32);
         this->addChild(circle);
 
         auto* label = cocos2d::CCLabelBMFont::create("am", "bigFont.fnt");
-        label->setScale(0.6f); // Letra más pequeña
+        label->setScale(0.6f);
         label->setColor({0, 255, 0});
         this->addChild(label);
 
@@ -112,7 +111,7 @@ public:
     }
 
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
-        return this->convertTouchToNodeSpace(touch).getLengthSq() < 400.f; // Hitbox ajustada
+        return this->convertTouchToNodeSpace(touch).getLengthSq() < 400.f;
     }
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         this->setPosition(this->getPosition() + touch->getDelta());
@@ -120,7 +119,7 @@ public:
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
         auto delta = touch->getDelta();
         if (std::abs(delta.x) < 5 && std::abs(delta.y) < 5) {
-            // Aquí llamaremos al menú
+            // Aquí va la lógica para abrir el menú si la añades después
         }
     }
     void registerWithTouchDispatcher() override {
@@ -132,37 +131,35 @@ public:
 // 3. MOTOR DE INPUTS (TICKSAVER)
 // =====================================================================================
 
-// Interceptamos el botón del jugador directamente
 class $modify(PlayerObjectHook, PlayerObject) {
     void pushButton(PlayerButton button) {
-        if (!Mod::get()->getSettingValue<bool>("buffer-perfecto") || button != PlayerButton::Jump) {
+        auto* pl = PlayLayer::get();
+        if (!Mod::get()->getSettingValue<bool>("buffer-perfecto") || button != PlayerButton::Jump || !pl) {
             PlayerObject::pushButton(button);
             return;
         }
 
-        int p = (this == PlayLayer::get()->m_player1) ? 0 : 1;
+        int p = (this == pl->m_player1) ? 0 : 1;
         Ticksaver::g_holding[p] = true;
 
-        // Si está en el suelo, guardamos el click en el buffer y NO saltamos aún
         if (this->m_isOnGround) {
             Ticksaver::g_buffered[p] = true;
             Ticksaver::g_bufferStartTick[p] = Ticksaver::g_tick;
         } else {
-            // En el aire (orbes, nave, wave), el click es instantáneo
             PlayerObject::pushButton(button);
         }
     }
 
     void releaseButton(PlayerButton button) {
-        if (!Mod::get()->getSettingValue<bool>("buffer-perfecto") || button != PlayerButton::Jump) {
+        auto* pl = PlayLayer::get();
+        if (!Mod::get()->getSettingValue<bool>("buffer-perfecto") || button != PlayerButton::Jump || !pl) {
             PlayerObject::releaseButton(button);
             return;
         }
 
-        int p = (this == PlayLayer::get()->m_player1) ? 0 : 1;
+        int p = (this == pl->m_player1) ? 0 : 1;
         Ticksaver::g_holding[p] = false;
         
-        // Si suelta el botón, cancelamos el click guardado
         if (Ticksaver::g_buffered[p]) {
             Ticksaver::g_buffered[p] = false;
         }
@@ -183,29 +180,23 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
                 PlayerObject* player = (p == 0) ? pl->m_player1 : pl->m_player2;
                 if (!player) continue;
 
-                // Si hay un click en el buffer esperando ser ejecutado
                 if (Ticksaver::g_buffered[p]) {
                     int maxTicks = Mod::get()->getSettingValue<int64_t>("tolerancia-buffer");
                     uint64_t timePassed = Ticksaver::g_tick - Ticksaver::g_bufferStartTick[p];
 
-                    // Si el jugador sigue en el suelo
                     if (player->m_isOnGround) {
-                        // Si el salto AHORA es seguro, lo ejecutamos!
                         if (!Ticksaver::isJumpDeadly(player)) {
                             player->pushButton(PlayerButton::Jump);
                             Ticksaver::g_buffered[p] = false;
                             
-                            // Si el jugador ya había soltado el botón, hacemos un tap rápido
                             if (!Ticksaver::g_holding[p]) {
                                 player->releaseButton(PlayerButton::Jump);
                             }
                         } 
-                        // Si el salto es mortal, esperamos. Si se pasa del tiempo límite, se descarta.
                         else if (timePassed > maxTicks) {
                             Ticksaver::g_buffered[p] = false;
                         }
                     } else {
-                        // Si ya está en el aire, el buffer se limpia
                         Ticksaver::g_buffered[p] = false;
                     }
                 }
@@ -219,22 +210,28 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
 // 4. HUD EN EL MENÚ Y EN EL JUEGO
 // =====================================================================================
 
-// Esto hace que la bolita aparezca en el menú principal y en el juego
-$execute {
-    OverlayManager::get()->schedule(schedule_selector(AssistHUD::create), 1); // Se añade al inicio
-}
+// Enganchamos el menú principal para que aparezca la bolita ahí
+class $modify(MenuLayerHook, MenuLayer) {
+    bool init() {
+        if (!MenuLayer::init()) return false;
+        if (Mod::get()->getSettingValue<bool>("mostrar-hud")) {
+            this->addChild(AssistHUD::create(), 9999);
+        }
+        return true;
+    }
+};
 
-// =====================================================================================
-// 5. TRAYECTORIA Y UI EXTRA
-// =====================================================================================
-
+// Enganchamos PlayLayer para que aparezca en el juego
 class $modify(InputAssistPlay, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
-        // Añadimos la bolita al juego también por si acaso
-        this->addChild(AssistHUD::create(), 9999);
+        
+        if (Mod::get()->getSettingValue<bool>("mostrar-hud")) {
+            this->addChild(AssistHUD::create(), 9999);
+        }
         return true;
     }
+    
     void update(float dt) {
         if (Mod::get()->getSettingValue<bool>("mostrar-trayectoria") && m_player1) {
             auto* drawNode = typeinfo_cast<cocos2d::CCDrawNode*>(this->getChildByID("trajectory-draw-node"));
