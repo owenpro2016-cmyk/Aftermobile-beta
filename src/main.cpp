@@ -25,7 +25,6 @@ namespace AeroEngine {
     constexpr float JUMP_VELOCITY = 11.180032f;
     constexpr float PLAYER_SIZE = 30.0f;
 
-    // Estructuras de Datos
     struct Hitbox { 
         float minX, minY, maxX, maxY; 
         bool isHazard; 
@@ -38,12 +37,11 @@ namespace AeroEngine {
         int player; 
     };
 
-    // Variables Globales
     std::array<Hitbox, 256> g_cachedHitboxes;
     size_t g_hitboxCount = 0;
     
     std::vector<InputLog> g_replayData;
-    std::vector<InputLog> g_clickHistory; // Para "Borrar ultimo click"
+    std::vector<InputLog> g_clickHistory;
     size_t g_replayIndex = 0;
     
     uint64_t g_currentTick = 0;
@@ -51,7 +49,6 @@ namespace AeroEngine {
     bool g_bufferedJump[2] = {false, false};
     uint64_t g_jumpStart[2] = {0, 0};
 
-    // Retorna los ticks según la etapa seleccionada
     int getMaxTicks(PlayerObject* p) {
         std::string stage = Mod::get()->getSettingValue<std::string>("assist-stage");
         if (stage == "Desactivado") return 0;
@@ -62,10 +59,9 @@ namespace AeroEngine {
         if (stage == "Suave (1 Tk)") return isWave ? 1 : 2;
         if (stage == "Balanceado (3 Tk)") return isWave ? 3 : 6;
         if (stage == "Extremo (8 Tk)") return isWave ? 8 : 20;
-        return 6; // Default
+        return 6;
     }
 
-    // --- ESCANEO DE OBJETOS ---
     void updateCache(PlayLayer* pl, PlayerObject* p1) {
         g_hitboxCount = 0;
         if (!pl || !p1 || !pl->m_objects) return;
@@ -76,27 +72,27 @@ namespace AeroEngine {
             if (!obj) continue;
             
             auto type = obj->m_objectType;
-            if (type == GameObjectType::Solid || type == GameObjectType::Hazard || type == GameObjectType::Portal) {
+            
+            // CORREGIDO: Eliminado GameObjectType::Portal porque no existe en esta version
+            if (type == GameObjectType::Solid || type == GameObjectType::Hazard) {
                 float oX = obj->getPositionX(), oY = obj->getPositionY();
-                // Escaneo en un radio de 500px para predecir con anticipación
                 if (oX > pX - 150.f && oX < pX + 500.f && oY > pY - 300.f && oY < pY + 300.f) {
                     auto rect = obj->getObjectRect();
                     g_cachedHitboxes[g_hitboxCount++] = { 
                         rect.getMinX(), rect.getMinY(), rect.getMaxX(), rect.getMaxY(), 
                         type == GameObjectType::Hazard, 
-                        type == GameObjectType::Portal 
+                        false // isPortal desactivado por ahora
                     };
                 }
             }
         }
     }
 
-    // --- SIMULADOR DE COLISIÓN ---
     bool checkCollision(float x, float y) {
         float half = PLAYER_SIZE / 2.0f;
         for (size_t i = 0; i < g_hitboxCount; i++) {
             const auto& hb = g_cachedHitboxes[i];
-            if (hb.isPortal) continue; // Los portales no matan
+            if (hb.isPortal) continue; 
             if (x + half - 2.f > hb.minX && x - half + 2.f < hb.maxX && 
                 y + half - 2.f > hb.minY && y - half + 2.f < hb.maxY) {
                 return true;
@@ -105,7 +101,6 @@ namespace AeroEngine {
         return false;
     }
 
-    // --- PREDICCIÓN CON PORTALES (Nova Style) ---
     bool isJumpSafe(PlayerObject* p1) {
         if (!p1) return false;
         float pX = p1->getPositionX(), pY = p1->getPositionY();
@@ -114,24 +109,13 @@ namespace AeroEngine {
         
         bool isShip = p1->m_isShip;
         bool isWave = p1->m_isDart;
-        bool predictPortals = Mod::get()->getSettingValue<bool>("predict-portals");
+        // bool predictPortals = Mod::get()->getSettingValue<bool>("predict-portals"); // Desactivado por ahora
 
         for (int t = 1; t <= 30; ++t) {
             float nextX = pX + (vX * t);
             float nextY = pY + (vY * t) - (0.5f * GRAVITY * t * t);
             
             if (checkCollision(nextX, nextY)) return false; 
-
-            // Si atraviesa un portal, cambia la física de la simulación
-            if (predictPortals) {
-                for (size_t i = 0; i < g_hitboxCount; i++) {
-                    const auto& hb = g_cachedHitboxes[i];
-                    if (hb.isPortal && nextX + 15 > hb.minX && nextX - 15 < hb.maxX && nextY + 15 > hb.minY && nextY - 15 < hb.maxY) {
-                        isShip = true; // Asumimos que se vuelve nave para predecir
-                        isWave = false;
-                    }
-                }
-            }
             
             if (isShip) vY += 0.4f; 
             else if (nextY <= pY && t > 3 && !isWave) break; 
@@ -141,7 +125,7 @@ namespace AeroEngine {
 }
 
 // =====================================================================================
-// 2. UI: PANEL DE CONTROL IN-GAME (Afterflow Style)
+// 2. UI: PANEL DE CONTROL IN-GAME
 // =====================================================================================
 
 class AeroPanel : public geode::Popup {
@@ -167,19 +151,16 @@ protected:
         menu->setPosition({0, 0});
         m_mainLayer->addChild(menu);
 
-        // Boton 1: Borrar Ultimo Click (Nova Feature)
         auto* delSpr = ButtonSprite::create("Undo Last Click", "bigFont.fnt", "GJ_button_04.png", 0.6f);
         auto* delBtn = CCMenuItemSpriteExtra::create(delSpr, this, menu_selector(AeroPanel::onUndo));
         delBtn->setPosition({160.f, 140.f});
         menu->addChild(delBtn);
 
-        // Boton 2: Limpiar Replay
         auto* clrSpr = ButtonSprite::create("Clear Replay Data", "bigFont.fnt", "GJ_button_06.png", 0.6f);
         auto* clrBtn = CCMenuItemSpriteExtra::create(clrSpr, this, menu_selector(AeroPanel::onClear));
         clrBtn->setPosition({160.f, 85.f});
         menu->addChild(clrBtn);
 
-        // Boton 3: Toggle HUD
         auto* hudSpr = ButtonSprite::create("Toggle HUD", "bigFont.fnt", "GJ_button_01.png", 0.6f);
         auto* hudBtn = CCMenuItemSpriteExtra::create(hudSpr, this, menu_selector(AeroPanel::onToggleHud));
         hudBtn->setPosition({160.f, 30.f});
@@ -256,7 +237,7 @@ public:
 };
 
 // =====================================================================================
-// 3. INTERCEPCIÓN DE INPUTS (CBF + Replay + Buffer)
+// 3. INTERCEPCIÓN DE INPUTS
 // =====================================================================================
 
 class $modify(PlayerObjectHook, PlayerObject) {
@@ -266,7 +247,6 @@ class $modify(PlayerObjectHook, PlayerObject) {
         int p = (this == PlayLayer::get()->m_player1) ? 0 : 1;
         std::string stage = Mod::get()->getSettingValue<std::string>("assist-stage");
 
-        // Registrar click para el sistema de "Undo"
         AeroEngine::g_clickHistory.push_back({AeroEngine::g_currentTick, true, p});
         if (Mod::get()->getSettingValue<bool>("enable-replay")) {
             AeroEngine::g_replayData.push_back({AeroEngine::g_currentTick, true, p});
@@ -277,7 +257,7 @@ class $modify(PlayerObjectHook, PlayerObject) {
             if (this->m_isOnGround) {
                 AeroEngine::g_bufferedJump[p] = true;
                 AeroEngine::g_jumpStart[p] = AeroEngine::g_currentTick;
-                return; // Retenemos el salto, no lo ejecutamos aún
+                return; 
             }
         }
         PlayerObject::pushButton(button);
@@ -306,7 +286,6 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
         if (Mod::get()->getSettingValue<std::string>("assist-stage") != "Desactivado") {
             AeroEngine::updateCache(pl, pl->m_player1);
 
-            // Reproducción de Replay
             if (Mod::get()->getSettingValue<bool>("enable-replay") && AeroEngine::g_replayIndex < AeroEngine::g_replayData.size()) {
                 auto& cmd = AeroEngine::g_replayData[AeroEngine::g_replayIndex];
                 if (cmd.tick == AeroEngine::g_currentTick) {
@@ -316,7 +295,6 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
                 }
             }
 
-            // Lógica del Buffer Predictivo
             for (int i = 0; i < 2; i++) {
                 PlayerObject* player = (i == 0) ? pl->m_player1 : pl->m_player2;
                 if (!player) continue;
@@ -342,7 +320,7 @@ class $modify(InputAssistBase, GJBaseGameLayer) {
 };
 
 // =====================================================================================
-// 4. HOOKS DE UI Y DIBUJO (Hitboxes y Trayectoria)
+// 4. HOOKS DE UI Y DIBUJO
 // =====================================================================================
 
 class $modify(MenuLayerHook, MenuLayer) {
@@ -386,17 +364,18 @@ class $modify(InputAssistPlay, PlayLayer) {
         }
         drawNode->clear();
 
-        // 1. Dibujar Hitboxes (QOLMod Style)
         if (Mod::get()->getSettingValue<bool>("show-hitboxes")) {
             for (size_t i = 0; i < AeroEngine::g_hitboxCount; i++) {
                 auto& hb = AeroEngine::g_cachedHitboxes[i];
                 if (hb.isPortal) continue;
                 cocos2d::ccColor4F color = hb.isHazard ? cocos2d::ccc4f(1, 0, 0, 0.5f) : cocos2d::ccc4f(0, 1, 0, 0.5f);
-                drawNode->drawRect({hb.minX, hb.minY}, {hb.maxX, hb.maxY}, color);
+                
+                // CORREGIDO: drawRect necesita un objeto CCRect
+                cocos2d::CCRect rect(hb.minX, hb.minY, hb.maxX - hb.minX, hb.maxY - hb.minY);
+                drawNode->drawRect(rect, color, 1.0f, color);
             }
         }
 
-        // 2. Dibujar Trayectoria Predictiva (Afterflow/Nova Style)
         if (Mod::get()->getSettingValue<bool>("show-prediction")) {
             float pX = m_player1->getPositionX(), pY = m_player1->getPositionY();
             float vX = 8.4f * m_player1->m_speedMultiplier;
