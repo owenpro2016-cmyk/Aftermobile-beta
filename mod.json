@@ -4,7 +4,7 @@
         "android": "2.2081",
         "win": "2.2081"
     },
-    "version": "v16.0.0",
+    "version": "v16.5.0",
     "id": "owenpro2016-cmyk.aftermobile-beta",
     "name": "Aftermobile Ultimate",
     "developer": "owenpro2016-cmyk",
@@ -72,6 +72,12 @@
         "show-hud": { 
             "type": "bool", 
             "name": "Mostrar Bolita AM", 
+            "default": true 
+        },
+        "debug-mode": { 
+            "type": "bool", 
+            "name": "Mostrar Texto de Debug (Estado)", 
+            "description": "Muestra texto al lado de la bolita para ver si el buffer funciona.",
             "default": true 
         },
         "hud-x": { 
